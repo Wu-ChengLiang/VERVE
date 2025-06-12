@@ -164,6 +164,49 @@ class DianpingWebSocketServer:
         logger.info(f"   - URL: {page_info.get('url', 'N/A')}")
         logger.info(f"   - 元素数量: {page_info.get('element_count', 0)}")
         
+        # 打印所有元素的详细信息
+        elements = page_info.get('elements', [])
+        if elements:
+            logger.info(f"[ELEMENTS] 开始打印所有 {len(elements)} 个元素的详细信息:")
+            logger.info("=" * 80)
+            
+            for element in elements:
+                try:
+                    logger.info(f"元素 #{element.get('index', 'N/A')}:")
+                    logger.info(f"  标签: <{element.get('tagName', 'unknown')}>")
+                    
+                    if element.get('id'):
+                        logger.info(f"  ID: {element.get('id')}")
+                    
+                    if element.get('className'):
+                        logger.info(f"  Class: {element.get('className')}")
+                    
+                    if element.get('textContent'):
+                        logger.info(f"  文本内容: {element.get('textContent')[:50]}...")
+                    
+                    # 打印位置信息
+                    position = element.get('position', {})
+                    if position:
+                        logger.info(f"  位置: top={position.get('offsetTop', 0)}, left={position.get('offsetLeft', 0)}")
+                        logger.info(f"  尺寸: width={position.get('offsetWidth', 0)}, height={position.get('offsetHeight', 0)}")
+                    
+                    # 打印重要属性
+                    attributes = element.get('attributes', {})
+                    if attributes:
+                        attr_str = ", ".join([f"{k}='{v}'" for k, v in attributes.items() if v])
+                        if attr_str:
+                            logger.info(f"  属性: {attr_str}")
+                    
+                    logger.info("-" * 40)
+                    
+                except Exception as e:
+                    logger.error(f"  打印元素信息时出错: {e}")
+            
+            logger.info("=" * 80)
+            logger.info(f"[ELEMENTS] 完成打印所有 {len(elements)} 个元素")
+        else:
+            logger.warning("[ELEMENTS] 未收到元素详细信息，可能是旧版本扩展")
+        
         return {
             "type": "page_info_received",
             "message": "页面信息已接收",

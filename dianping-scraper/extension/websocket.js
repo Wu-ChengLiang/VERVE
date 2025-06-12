@@ -50,8 +50,8 @@ class WebSocketManager {
                 this.isConnected = true;
                 this.reconnectAttempts = 0;
                 
-                // 发送页面信息
-                this.sendPageInfo();
+                // 发送欢迎消息
+                // this.sendPageInfo(); // 在连接时发送页面信息
                 
                 // 处理消息队列
                 this.processMessageQueue();
@@ -180,6 +180,43 @@ class WebSocketManager {
      * 发送页面信息
      */
     sendPageInfo() {
+        // 收集所有元素的详细信息
+        const allElements = document.querySelectorAll('*');
+        const elementsInfo = [];
+        
+        allElements.forEach((element, index) => {
+            try {
+                const elementInfo = {
+                    index: index,
+                    tagName: element.tagName.toLowerCase(),
+                    id: element.id || '',
+                    className: element.className || '',
+                    textContent: element.textContent ? element.textContent.trim().substring(0, 100) : '', // 限制文本长度
+                    attributes: {},
+                    position: {
+                        offsetTop: element.offsetTop,
+                        offsetLeft: element.offsetLeft,
+                        offsetWidth: element.offsetWidth,
+                        offsetHeight: element.offsetHeight
+                    }
+                };
+                
+                // 收集主要属性
+                if (element.attributes) {
+                    for (let attr of element.attributes) {
+                        if (['id', 'class', 'src', 'href', 'alt', 'title', 'data-*'].some(key => 
+                            attr.name === key || attr.name.startsWith('data-'))) {
+                            elementInfo.attributes[attr.name] = attr.value;
+                        }
+                    }
+                }
+                
+                elementsInfo.push(elementInfo);
+            } catch (error) {
+                console.warn(`[WebSocket] 处理元素 ${index} 时出错:`, error);
+            }
+        });
+        
         const pageInfo = {
             type: 'page_info',
             page_info: {
@@ -187,7 +224,8 @@ class WebSocketManager {
                 url: window.location.href,
                 timestamp: new Date().toISOString(),
                 user_agent: navigator.userAgent,
-                element_count: document.querySelectorAll('*').length
+                element_count: allElements.length,
+                elements: elementsInfo // 添加所有元素的详细信息
             }
         };
         

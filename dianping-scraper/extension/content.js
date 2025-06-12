@@ -16,6 +16,7 @@
             this.extractedData = new Set(); // 防止重复提取
             this.lastExtractTime = 0;
             this.extractCooldown = 2000; // 2秒冷却期
+            this.pageInfoSent = false; // 新增：确保页面信息只发送一次
             
             // 大众点评特定选择器
             this.selectors = {
@@ -183,6 +184,13 @@
          * 安排数据提取（防抖）
          */
         scheduleExtraction() {
+            // 新增逻辑：如果页面信息尚未发送，则发送
+            if (!this.pageInfoSent && this.websocketManager && this.websocketManager.isConnected) {
+                console.log('[DianpingExtractor] 页面关键内容已加载，发送页面信息...');
+                this.websocketManager.sendPageInfo();
+                this.pageInfoSent = true;
+            }
+
             const now = Date.now();
             if (now - this.lastExtractTime < this.extractCooldown) {
                 return; // 冷却期内，跳过
@@ -192,7 +200,9 @@
             
             // 延迟执行，等待DOM稳定
             setTimeout(() => {
-                this.extractData();
+                if (this.isActive) {
+                    this.extractData();
+                }
             }, 500);
         }
         
