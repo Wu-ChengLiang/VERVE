@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>大众点评数据提取器</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <div class="container">
+        <!-- 头部 -->
+        <header class="header">
+            <div class="logo">
+                <img src="icons/icon48.png" alt="Logo" class="logo-img">
+                <h1 class="title">大众点评数据提取器</h1>
+            </div>
+            <div class="status-indicator" id="statusIndicator">
+                <span class="status-dot" id="statusDot"></span>
+                <span class="status-text" id="statusText">检查中...</span>
+            </div>
+        </header>
+
+        <!-- 主要控制区域 -->
+        <main class="main">
+            <!-- 连接状态 -->
+            <section class="section">
+                <h3>连接状态</h3>
+                <div class="status-card">
+                    <div class="status-item">
+                        <span class="label">WebSocket:</span>
+                        <span class="value" id="websocketStatus">未连接</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="label">当前页面:</span>
+                        <span class="value" id="currentPage">--</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="label">数据提取:</span>
+                        <span class="value" id="extractionStatus">未激活</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 控制按钮 -->
+            <section class="section">
+                <h3>控制面板</h3>
+                <div class="controls">
+                    <button class="btn btn-primary" id="toggleExtraction">
+                        <span id="toggleText">启动提取</span>
+                    </button>
+                    <button class="btn btn-secondary" id="testConnection">
+                        测试连接
+                    </button>
+                    <button class="btn btn-secondary" id="clearData">
+                        清除数据
+                    </button>
+                </div>
+            </section>
+
+            <!-- 统计信息 -->
+            <section class="section">
+                <h3>统计信息</h3>
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <div class="stat-number" id="extractedCount">0</div>
+                        <div class="stat-label">已提取数据</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-number" id="errorCount">0</div>
+                        <div class="stat-label">错误次数</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-number" id="uptimeDisplay">--</div>
+                        <div class="stat-label">运行时间</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 快速操作 -->
+            <section class="section">
+                <h3>快速操作</h3>
+                <div class="quick-actions">
+                    <button class="btn btn-link" id="openDianping">
+                        打开大众点评
+                    </button>
+                    <button class="btn btn-link" id="viewData">
+                        查看数据
+                    </button>
+                    <button class="btn btn-link" id="openSettings">
+                        设置
+                    </button>
+                </div>
+            </section>
+        </main>
+
+        <!-- 底部 -->
+        <footer class="footer">
+            <div class="version">版本 1.0.0</div>
+            <div class="last-update">
+                最后更新: <span id="lastUpdate">--</span>
+            </div>
+        </footer>
+    </div>
+
+    <!-- 消息提示 -->
+    <div class="message" id="message" style="display: none;">
+        <span class="message-text" id="messageText"></span>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html> 
