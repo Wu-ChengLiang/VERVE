@@ -1,56 +1,73 @@
-# 大众点评网页元素读取器
+# 大众点评数据提取器 - 精简版
 
-基于浏览器扩展 + WebSocket通信架构的大众点评网页数据提取工具。
+## 项目简介
 
-## 项目结构
+这是一个专门用于提取大众点评网页数据的Chrome浏览器扩展程序的精简版本。删除了冗余功能，只保留核心的数据监听和提取功能。
 
-```
-dianping-scraper/
-├── backend/          # Python后端服务
-├── extension/        # 浏览器扩展
-├── tests/           # 测试文件
-├── docs/            # 项目文档
-├── requirements.txt # Python依赖
-└── README.md       # 项目说明
-```
+## 核心功能
 
-## 技术架构
+- ✅ **数据监听**: 自动监听大众点评页面内容变化
+- ✅ **内容提取**: 提取聊天消息和团购信息
+- ✅ **实时传输**: 通过WebSocket实时传输数据到后端
+- ✅ **启动/停止**: 手动控制数据提取状态
 
-```
-大众点评网页 ←→ 浏览器扩展(Content Script) ←→ WebSocket ←→ Python后端 ←→ 数据处理/存储
-```
+## 已删除功能
 
-## 快速开始
+- ❌ 统计信息显示
+- ❌ 数据清除功能  
+- ❌ 页面信息详细分析
+- ❌ 复杂的设置页面
+- ❌ 数据查看界面
 
-### 1. 安装依赖
+## 快速使用
 
+### 1. 安装扩展程序
 ```bash
-pip install -r requirements.txt
+# 在Chrome中加载扩展
+# 1. 打开Chrome扩展管理页面
+# 2. 启用开发者模式
+# 3. 点击"加载已解压的扩展程序"
+# 4. 选择extension文件夹
 ```
 
 ### 2. 启动后端服务
-
 ```bash
 cd backend
 python server.py
 ```
 
-### 3. 加载浏览器扩展
+### 3. 使用步骤
+1. 访问大众点评网站
+2. 点击扩展图标
+3. 点击"启动提取"按钮
+4. 在大众点评页面浏览，数据会自动提取
 
-1. 打开Chrome浏览器
-2. 进入扩展管理页面 (chrome://extensions/)
-3. 开启开发者模式
-4. 点击"加载已解压的扩展程序"
-5. 选择 `extension` 目录
+## 项目结构
 
-### 4. 访问目标网页
+```
+dianping-scraper/
+├── extension/          # Chrome扩展程序
+│   ├── content.js      # 内容脚本（核心提取逻辑）
+│   ├── background.js   # 后台脚本（WebSocket通信）
+│   ├── popup.js       # 弹窗脚本（简化版）
+│   ├── popup.html     # 弹窗界面（精简版）
+│   └── manifest.json  # 扩展配置
+├── backend/           # Python后端服务
+│   └── server.py      # WebSocket服务器（精简版）
+└── README.md          # 项目说明
+```
 
-打开 https://g.dianping.com/dzim-main-pc/index.html#/ 即可开始数据提取。
+## 技术栈
 
-## 开发状态
+- **前端**: JavaScript, Chrome Extension API
+- **后端**: Python, WebSocket
+- **通信**: WebSocket实时数据传输
 
-项目正在开发中，当前已完成基础架构搭建。
+## 开发说明
 
-## 许可证
+这是原项目的精简版本，去除了所有非核心功能，专注于：
+1. 高效的DOM监听和数据提取
+2. 稳定的WebSocket通信
+3. 简洁的用户界面
 
-MIT License 
+适合需要纯粹数据提取功能的使用场景。 

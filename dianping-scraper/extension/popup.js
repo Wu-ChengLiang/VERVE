@@ -1,6 +1,6 @@
 /**
  * 大众点评数据提取器 - 弹出窗口脚本
- * 处理用户界面交互和状态管理
+ * 精简版 - 只保留核心功能
  */
 document.addEventListener('DOMContentLoaded', () => {
     const toggleButton = document.getElementById('toggleExtraction');
@@ -42,7 +42,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-
+    // 获取当前标签页并检查状态
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         const tab = tabs[0];
         if (!tab) return;
@@ -60,10 +60,10 @@ document.addEventListener('DOMContentLoaded', () => {
             pageElement.className = 'value connected';
         }
 
-        // Get initial status from background script
+        // 获取初始状态
         chrome.runtime.sendMessage({ type: 'getStatus', tabId: currentTabId }, (response) => {
             if (chrome.runtime.lastError) {
-                console.error("GetStatus Error:", chrome.runtime.lastError.message);
+                console.error("获取状态错误:", chrome.runtime.lastError.message);
                 updateUI(false);
                 updateWebsocketStatusUI(false);
             } else if (response) {
@@ -76,20 +76,21 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    // 切换提取状态
     toggleButton.addEventListener('click', () => {
         if (!currentTabId || toggleButton.disabled) return;
 
         const messageType = isExtracting ? 'stopExtraction' : 'startExtraction';
         chrome.runtime.sendMessage({ type: messageType, tabId: currentTabId }, (response) => {
             if (chrome.runtime.lastError) {
-                console.error(messageType + " Error:", chrome.runtime.lastError.message);
+                console.error(messageType + " 错误:", chrome.runtime.lastError.message);
             } else if (response && (response.status === 'started' || response.status === 'stopped')) {
                 updateUI(!isExtracting);
             }
         });
     });
     
-    // Minimalistic handlers for other buttons to prevent errors
+    // 测试连接
     document.getElementById('testConnection').addEventListener('click', () => {
         chrome.runtime.sendMessage({ type: 'connect' }, (response) => {
             if(response && response.status === 'connected') {
@@ -99,8 +100,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     });
-    document.getElementById('clearData').addEventListener('click', () => console.log('Clear data clicked'));
-    document.getElementById('openDianping').addEventListener('click', () => chrome.tabs.create({ url: 'https://www.dianping.com/' }));
-    document.getElementById('viewData').addEventListener('click', () => console.log('View data clicked'));
-    document.getElementById('openSettings').addEventListener('click', () => console.log('Settings clicked'));
+
+    // 打开大众点评
+    document.getElementById('openDianping').addEventListener('click', () => {
+        chrome.tabs.create({ url: 'https://www.dianping.com/' });
+    });
 }); 

@@ -1,6 +1,6 @@
 /**
  * WebSocket通信管理器 - 后台脚本
- * 负责与Python后端服务器的全局连接和数据传输
+ * 精简版 - 负责与Python后端的核心连接和数据传输
  */
 let websocket = null;
 const wsUrl = 'ws://localhost:8765';
@@ -8,35 +8,34 @@ let tabExtractionStatus = {}; // { tabId: boolean }
 
 function connectWebSocket() {
     if (websocket && websocket.readyState === WebSocket.OPEN) {
-        console.log('[Background] WebSocket is already connected.');
+        console.log('[Background] WebSocket已连接');
         return;
     }
     
     if (websocket && websocket.readyState === WebSocket.CONNECTING) {
-        console.log('[Background] WebSocket is connecting.');
+        console.log('[Background] WebSocket连接中');
         return;
     }
 
-    console.log('[Background] Connecting to WebSocket...');
+    console.log('[Background] 正在连接WebSocket...');
     websocket = new WebSocket(wsUrl);
 
     websocket.onopen = () => {
-        console.log('[Background] WebSocket connection established.');
+        console.log('[Background] WebSocket连接已建立');
     };
 
     websocket.onmessage = (event) => {
-        console.log('[Background] Message from server:', event.data);
+        console.log('[Background] 收到服务器消息:', event.data);
     };
 
     websocket.onclose = () => {
-        console.log('[Background] WebSocket connection closed.');
+        console.log('[Background] WebSocket连接已关闭');
         websocket = null;
-        // Optional: attempt to reconnect
         setTimeout(connectWebSocket, 5000);
     };
 
     websocket.onerror = (error) => {
-        console.error('[Background] WebSocket error:', error);
+        console.error('[Background] WebSocket错误:', error);
         websocket = null;
     };
 }
@@ -45,8 +44,7 @@ function sendMessageToServer(data) {
     if (websocket && websocket.readyState === WebSocket.OPEN) {
         websocket.send(JSON.stringify(data));
     } else {
-        console.error('[Background] WebSocket not connected. Cannot send data.');
-        // ToDo: Queueing could be implemented here if needed
+        console.error('[Background] WebSocket未连接，无法发送数据');
     }
 }
 
@@ -55,58 +53,53 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     switch (message.type) {
         case 'connect':
-            console.log('[Background] Received connect request.');
+            console.log('[Background] 收到连接请求');
             connectWebSocket();
-            // Give it a moment to establish connection for the UI update
             setTimeout(() => {
                 sendResponse({ status: (websocket && websocket.readyState === WebSocket.OPEN) ? 'connected' : 'connecting' });
             }, 500);
-            return true; // Async response
+            return true;
 
         case 'startExtraction':
             if (!tabId) {
-                 sendResponse({ status: 'error', message: 'No tabId provided.' });
+                 sendResponse({ status: 'error', message: '无tabId' });
                  return true;
             }
-            console.log(`[Background] Received startExtraction for tab ${tabId}`);
-            // Ensure connection exists before starting
+            console.log(`[Background] 开始提取 tab ${tabId}`);
             if (!websocket || websocket.readyState !== WebSocket.OPEN) {
                 connectWebSocket();
             }
             chrome.tabs.sendMessage(tabId, { type: 'startExtraction' }, (response) => {
                 if (chrome.runtime.lastError) {
-                    console.error('[Background] Error starting extraction:', chrome.runtime.lastError.message);
+                    console.error('[Background] 启动提取错误:', chrome.runtime.lastError.message);
                     sendResponse({ status: 'error', message: chrome.runtime.lastError.message });
                 } else {
                     tabExtractionStatus[tabId] = true;
-                    console.log(`[Background] Extraction started for tab ${tabId}`);
                     sendResponse({ status: 'started' });
                 }
             });
-            return true; // Keep message channel open for async response
+            return true;
 
         case 'stopExtraction':
              if (!tabId) {
-                 sendResponse({ status: 'error', message: 'No tabId provided.' });
+                 sendResponse({ status: 'error', message: '无tabId' });
                  return true;
             }
-            console.log(`[Background] Received stopExtraction for tab ${tabId}`);
+            console.log(`[Background] 停止提取 tab ${tabId}`);
             chrome.tabs.sendMessage(tabId, { type: 'stopExtraction' }, (response) => {
                 if (chrome.runtime.lastError) {
-                    console.error('[Background] Error stopping extraction:', chrome.runtime.lastError.message);
+                    console.error('[Background] 停止提取错误:', chrome.runtime.lastError.message);
                     sendResponse({ status: 'error', message: chrome.runtime.lastError.message });
                 } else {
                     tabExtractionStatus[tabId] = false;
-                    console.log(`[Background] Extraction stopped for tab ${tabId}`);
                     sendResponse({ status: 'stopped' });
                 }
             });
-            return true; // Keep message channel open for async response
+            return true;
 
         case 'extractedData':
-            console.log('[Background] Received extractedData, sending to server.');
+            console.log('[Background] 收到提取数据，发送到服务器');
             sendMessageToServer(message.data);
-            // No response needed for this message type
             break;
 
         case 'getStatus':
@@ -114,21 +107,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                  sendResponse({ isExtracting: false, isConnected: false });
                  return true;
             }
-            console.log(`[Background] Received getStatus for tab ${tabId}`);
             const isConnected = websocket && websocket.readyState === WebSocket.OPEN;
             const isExtracting = !!tabExtractionStatus[tabId];
             sendResponse({ isExtracting: isExtracting, isConnected: isConnected });
             break;
             
         default:
-            console.warn(`[Background] Received unknown message type: ${message.type}`);
-            sendResponse({ status: 'error', message: 'Unknown message type' });
+            console.warn(`[Background] 未知消息类型: ${message.type}`);
+            sendResponse({ status: 'error', message: '未知消息类型' });
             return false;
     }
-    return true; // Default to keeping channel open for async responses
+    return true;
 });
 
-// Initial connection attempt when the extension starts
+// 扩展启动时初始化连接
 connectWebSocket();
 
-console.log('[BG] 后台脚本已完全加载。');
+console.log('[Background] 后台脚本已加载');
