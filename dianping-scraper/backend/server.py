@@ -72,36 +72,39 @@ class DianpingWebSocketServer:
         """处理来自客户端的消息"""
         try:
             data = json.loads(message)
-            msg_type = data.get("type", "unknown")
             timestamp = datetime.now().isoformat()
             
-            logger.info(f"[MESSAGE] 收到消息类型: {msg_type}")
-            logger.debug(f"[MESSAGE] 消息内容: {json.dumps(data, ensure_ascii=False, indent=2)}")
+            response = None
+            if isinstance(data, list):
+                logger.info(f"[MESSAGE] 收到消息数组 (共 {len(data)} 条)")
+                response = await self.handle_dianping_data_list(data, timestamp)
+            elif isinstance(data, dict):
+                msg_type = data.get("type", "unknown")
+                logger.info(f"[MESSAGE] 收到消息类型: {msg_type}")
+                logger.debug(f"[MESSAGE] 消息内容: {json.dumps(data, ensure_ascii=False, indent=2)}")
+                response = await self.process_message_by_type(data, timestamp)
+            else:
+                logger.warning(f"⚠️ 收到了未知的数据类型: {type(data)}")
+                response = {
+                    "type": "error",
+                    "message": "不支持的数据类型",
+                    "timestamp": timestamp
+                }
             
-            # 根据消息类型处理
-            response = await self.process_message_by_type(data, timestamp)
-            
-            # 发送响应
             if response:
                 await websocket.send(json.dumps(response, ensure_ascii=False))
                 logger.info(f"[RESPONSE] 发送响应: {response.get('type', 'unknown')}")
                 
         except json.JSONDecodeError as e:
             logger.error(f"[ERROR] JSON解析错误: {e}")
-            error_response = {
-                "type": "error",
-                "message": "JSON格式错误",
-                "timestamp": datetime.now().isoformat()
-            }
-            await websocket.send(json.dumps(error_response, ensure_ascii=False))
+            await websocket.send(json.dumps({
+                "type": "error", "message": "JSON格式错误", "timestamp": datetime.now().isoformat()
+            }, ensure_ascii=False))
         except Exception as e:
             logger.error(f"[ERROR] 消息处理错误: {e}")
-            error_response = {
-                "type": "error", 
-                "message": "服务器内部错误",
-                "timestamp": datetime.now().isoformat()
-            }
-            await websocket.send(json.dumps(error_response, ensure_ascii=False))
+            await websocket.send(json.dumps({
+                "type": "error", "message": "服务器内部错误", "timestamp": datetime.now().isoformat()
+            }, ensure_ascii=False))
 
     async def process_message_by_type(self, data: Dict[str, Any], timestamp: str) -> Dict[str, Any]:
         """根据消息类型处理数据"""
@@ -130,27 +133,53 @@ class DianpingWebSocketServer:
                 "timestamp": timestamp
             }
 
-    async def handle_dianping_data(self, data: Dict[str, Any], timestamp: str) -> Dict[str, Any]:
-        """处理大众点评数据"""
-        content = data.get("content", {})
-        page_url = data.get("url", "")
+    async def handle_dianping_data_list(self, data_list: list, timestamp: str) -> Dict[str, Any]:
+        """专门处理聊天消息列表"""
+        logger.info(f"[CHAT] 提取到 {len(data_list)} 条聊天消息:")
+        for msg in data_list:
+            content = msg.get('content', '无内容')
+            logger.info(f"  - {content}")
         
-        # 存储数据
+        data_id = f"dianping_chat_{timestamp}"
+        self.data_store[data_id] = {
+            "content": data_list,
+            "url": "N/A (来自列表)",
+            "timestamp": timestamp,
+            "type": "dianping_chat_list"
+        }
+        
+        return {
+            "type": "data_received",
+            "message": f"聊天数据列表已接收 ({len(data_list)}条)",
+            "data_id": data_id,
+            "timestamp": timestamp
+        }
+
+    async def handle_dianping_data(self, data: Dict[str, Any], timestamp: str) -> Dict[str, Any]:
+        """处理大众点评数据(旧格式)"""
+        content = data.get("payload", {}) # Adjusted to match client structure
+        page_url = content.get("pageUrl", "N/A")
+        
         data_id = f"dianping_{timestamp}"
         self.data_store[data_id] = {
             "content": content,
             "url": page_url,
             "timestamp": timestamp,
-            "type": "dianping_data"
+            "type": "dianping_data_object"
         }
         
-        logger.info(f"[DATA] 存储大众点评数据: {data_id}")
+        logger.info(f"[DATA] 存储大众点评数据对象: {data_id}")
         logger.info(f"[URL] 页面URL: {page_url}")
-        logger.info(f"[COUNT] 数据条目数: {len(content) if isinstance(content, list) else 1}")
+        
+        if content.get("pageType") == "chat_page":
+            messages = content.get("data", {}).get("messages", [])
+            logger.info(f"[CHAT] 提取到 {len(messages)} 条聊天消息:")
+            for msg in messages:
+                logger.info(f"  - {msg.get('content')}")
         
         return {
             "type": "data_received",
-            "message": "大众点评数据已接收并存储",
+            "message": "大众点评数据对象已接收",
             "data_id": data_id,
             "timestamp": timestamp
         }
