@@ -89,20 +89,4 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     });
-    
-    // 测试连接
-    document.getElementById('testConnection').addEventListener('click', () => {
-        chrome.runtime.sendMessage({ type: 'connect' }, (response) => {
-            if(response && response.status === 'connected') {
-                 updateWebsocketStatusUI(true);
-            } else {
-                 updateWebsocketStatusUI(false);
-            }
-        });
-    });
-
-    // 打开大众点评
-    document.getElementById('openDianping').addEventListener('click', () => {
-        chrome.tabs.create({ url: 'https://www.dianping.com/' });
-    });
 }); 

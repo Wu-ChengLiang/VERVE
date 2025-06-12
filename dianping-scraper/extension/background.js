@@ -52,14 +52,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const tabId = message.tabId || (sender.tab ? sender.tab.id : null);
 
     switch (message.type) {
-        case 'connect':
-            console.log('[Background] 收到连接请求');
-            connectWebSocket();
-            setTimeout(() => {
-                sendResponse({ status: (websocket && websocket.readyState === WebSocket.OPEN) ? 'connected' : 'connecting' });
-            }, 500);
-            return true;
-
         case 'startExtraction':
             if (!tabId) {
                  sendResponse({ status: 'error', message: '无tabId' });
