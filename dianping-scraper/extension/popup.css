@@ -332,6 +332,30 @@ body {
     }
 }
 
+/* 输入控件样式 */
+.contact-input,
+.contact-select {
+    padding: 4px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-size: 13px;
+    background-color: var(--background-color);
+    color: var(--text-primary);
+    min-width: 80px;
+}
+
+.contact-input:focus,
+.contact-select:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(255, 105, 0, 0.1);
+}
+
+.contact-input[type="number"] {
+    text-align: center;
+    width: 60px;
+}
+
 /* 响应式设计 */
 @media (max-width: 320px) {
     body {

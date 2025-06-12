@@ -50,6 +50,38 @@
                     </button>
                 </div>
             </section>
+
+            <!-- 联系人遍历 -->
+            <section class="section">
+                <h3>联系人自动点击</h3>
+                <div class="status-card">
+                    <div class="status-item">
+                        <span class="label">点击数量:</span>
+                        <input type="number" id="contactCount" value="10" min="1" max="50" class="contact-input">
+                    </div>
+                    <div class="status-item">
+                        <span class="label">点击间隔:</span>
+                        <select id="clickInterval" class="contact-select">
+                            <option value="1000">1秒</option>
+                            <option value="2000" selected>2秒</option>
+                            <option value="3000">3秒</option>
+                            <option value="5000">5秒</option>
+                        </select>
+                    </div>
+                    <div class="status-item">
+                        <span class="label">进度:</span>
+                        <span class="value" id="clickProgress">未开始</span>
+                    </div>
+                </div>
+                <div class="controls">
+                    <button class="btn btn-secondary" id="startClickContacts">
+                        <span id="clickText">开始点击联系人</span>
+                    </button>
+                    <button class="btn btn-link" id="stopClickContacts" style="display: none;">
+                        停止点击
+                    </button>
+                </div>
+            </section>
         </main>
 
         <!-- 底部 -->

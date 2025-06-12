@@ -10,8 +10,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const statusDot = document.getElementById('statusDot');
     const statusText = document.getElementById('statusText');
 
+    // 联系人点击控件
+    const startClickButton = document.getElementById('startClickContacts');
+    const stopClickButton = document.getElementById('stopClickContacts');
+    const clickText = document.getElementById('clickText');
+    const contactCountInput = document.getElementById('contactCount');
+    const clickIntervalSelect = document.getElementById('clickInterval');
+    const clickProgressSpan = document.getElementById('clickProgress');
+
     let currentTabId = null;
     let isExtracting = false;
+    let isClickingContacts = false;
 
     function updateUI(extracting) {
         isExtracting = extracting;
@@ -40,6 +49,34 @@ document.addEventListener('DOMContentLoaded', () => {
             statusDot.className = 'status-dot error';
             statusText.textContent = '未连接';
         }
+    }
+
+    function updateClickUI(clicking) {
+        isClickingContacts = clicking;
+        if (isClickingContacts) {
+            startClickButton.style.display = 'none';
+            stopClickButton.style.display = 'block';
+            contactCountInput.disabled = true;
+            clickIntervalSelect.disabled = true;
+        } else {
+            startClickButton.style.display = 'block';
+            stopClickButton.style.display = 'none';
+            contactCountInput.disabled = false;
+            clickIntervalSelect.disabled = false;
+            clickProgressSpan.textContent = '已停止';
+            clickProgressSpan.className = 'value warning';
+        }
+    }
+
+    function showMessage(text, type = 'success') {
+        const messageDiv = document.getElementById('message');
+        const messageText = document.getElementById('messageText');
+        messageText.textContent = text;
+        messageDiv.className = `message ${type}`;
+        messageDiv.style.display = 'block';
+        setTimeout(() => {
+            messageDiv.style.display = 'none';
+        }, 3000);
     }
 
     // 获取当前标签页并检查状态
@@ -88,5 +125,66 @@ document.addEventListener('DOMContentLoaded', () => {
                 updateUI(!isExtracting);
             }
         });
+    });
+
+    // 开始点击联系人
+    startClickButton.addEventListener('click', () => {
+        if (!currentTabId || startClickButton.disabled) return;
+
+        const count = parseInt(contactCountInput.value) || 10;
+        const interval = parseInt(clickIntervalSelect.value) || 2000;
+
+        if (count < 1 || count > 50) {
+            showMessage('请输入1-50之间的数量', 'error');
+            return;
+        }
+
+        chrome.runtime.sendMessage({
+            type: 'startClickContacts',
+            tabId: currentTabId,
+            count: count,
+            interval: interval
+        }, (response) => {
+            if (chrome.runtime.lastError) {
+                console.error("启动联系人点击错误:", chrome.runtime.lastError.message);
+                showMessage('启动失败', 'error');
+            } else if (response && response.status === 'started') {
+                updateClickUI(true);
+                clickProgressSpan.textContent = `0/${count}`;
+                clickProgressSpan.className = 'value connected';
+                showMessage(`开始点击${count}个联系人`, 'success');
+            }
+        });
+    });
+
+    // 停止点击联系人
+    stopClickButton.addEventListener('click', () => {
+        if (!currentTabId) return;
+
+        chrome.runtime.sendMessage({
+            type: 'stopClickContacts',
+            tabId: currentTabId
+        }, (response) => {
+            if (chrome.runtime.lastError) {
+                console.error("停止联系人点击错误:", chrome.runtime.lastError.message);
+            } else if (response && response.status === 'stopped') {
+                updateClickUI(false);
+                showMessage('已停止点击联系人', 'warning');
+            }
+        });
+    });
+
+    // 监听来自content script的进度更新
+    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+        if (request.type === 'clickProgress') {
+            clickProgressSpan.textContent = `${request.current}/${request.total}`;
+            if (request.current >= request.total) {
+                updateClickUI(false);
+                showMessage('联系人点击完成', 'success');
+            }
+        } else if (request.type === 'clickError') {
+            updateClickUI(false);
+            showMessage(request.message || '点击过程中发生错误', 'error');
+        }
     });
 }); 

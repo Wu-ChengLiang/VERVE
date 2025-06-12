@@ -94,6 +94,48 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             sendMessageToServer(message.data);
             break;
 
+        case 'startClickContacts':
+            if (!tabId) {
+                sendResponse({ status: 'error', message: '无tabId' });
+                return true;
+            }
+            console.log(`[Background] 开始点击联系人 tab ${tabId}, 数量: ${message.count}, 间隔: ${message.interval}`);
+            chrome.tabs.sendMessage(tabId, { 
+                type: 'startClickContacts', 
+                count: message.count, 
+                interval: message.interval 
+            }, (response) => {
+                if (chrome.runtime.lastError) {
+                    console.error('[Background] 启动联系人点击错误:', chrome.runtime.lastError.message);
+                    sendResponse({ status: 'error', message: chrome.runtime.lastError.message });
+                } else {
+                    sendResponse({ status: 'started' });
+                }
+            });
+            return true;
+
+        case 'stopClickContacts':
+            if (!tabId) {
+                sendResponse({ status: 'error', message: '无tabId' });
+                return true;
+            }
+            console.log(`[Background] 停止点击联系人 tab ${tabId}`);
+            chrome.tabs.sendMessage(tabId, { type: 'stopClickContacts' }, (response) => {
+                if (chrome.runtime.lastError) {
+                    console.error('[Background] 停止联系人点击错误:', chrome.runtime.lastError.message);
+                    sendResponse({ status: 'error', message: chrome.runtime.lastError.message });
+                } else {
+                    sendResponse({ status: 'stopped' });
+                }
+            });
+            return true;
+
+        case 'clickProgress':
+        case 'clickError':
+            // 转发进度和错误消息到popup
+            chrome.runtime.sendMessage(message);
+            break;
+
         case 'getStatus':
              if (!tabId) {
                  sendResponse({ isExtracting: false, isConnected: false });

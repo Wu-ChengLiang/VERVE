@@ -15,9 +15,17 @@
             this.pollingInterval = null;
             this.extractedData = new Set(); // 防止重复提取
 
+            // 联系人点击相关属性
+            this.isClickingContacts = false;
+            this.clickTimeout = null;
+            this.clickCount = 0;
+            this.totalClicks = 0;
+            this.clickInterval = 2000;
+
             this.selectors = {
                 chatMessageList: '.text-message.normal-text, .rich-message, .text-message.shop-text',
                 tuanInfo: '.tuan',
+                contactItems: '.chat-list-item', // 联系人元素选择器
             };
             
             this.init();
@@ -37,6 +45,14 @@
                         break;
                     case 'stopExtraction':
                         this.stop();
+                        sendResponse({ status: 'stopped' });
+                        break;
+                    case 'startClickContacts':
+                        this.startClickContacts(request.count, request.interval);
+                        sendResponse({ status: 'started' });
+                        break;
+                    case 'stopClickContacts':
+                        this.stopClickContacts();
                         sendResponse({ status: 'stopped' });
                         break;
                 }
@@ -241,6 +257,117 @@
             }
 
             return { tuanInfo: tuanInfoList, count: tuanInfoList.length };
+        }
+        
+        // 开始点击联系人
+        startClickContacts(count = 10, interval = 2000) {
+            if (this.isClickingContacts) {
+                console.log('[DianpingExtractor] 联系人点击已在进行中');
+                return;
+            }
+            
+            this.isClickingContacts = true;
+            this.clickCount = 0;
+            this.totalClicks = count;
+            this.clickInterval = interval;
+            
+            console.log(`[DianpingExtractor] 开始点击联系人，总数: ${count}, 间隔: ${interval}ms`);
+            this.sendProgressUpdate();
+            this.clickNextContact();
+        }
+        
+        // 停止点击联系人
+        stopClickContacts() {
+            if (!this.isClickingContacts) return;
+            
+            this.isClickingContacts = false;
+            if (this.clickTimeout) {
+                clearTimeout(this.clickTimeout);
+                this.clickTimeout = null;
+            }
+            
+            console.log('[DianpingExtractor] 联系人点击已停止');
+            this.sendErrorMessage('用户手动停止');
+        }
+        
+        // 点击下一个联系人
+        clickNextContact() {
+            if (!this.isClickingContacts || this.clickCount >= this.totalClicks) {
+                this.isClickingContacts = false;
+                console.log('[DianpingExtractor] 联系人点击完成');
+                this.sendProgressUpdate();
+                return;
+            }
+            
+            try {
+                // 查找所有联系人元素
+                const contactElements = this.findAllElements(this.selectors.contactItems, document);
+                
+                if (contactElements.length === 0) {
+                    this.sendErrorMessage('未找到联系人元素');
+                    return;
+                }
+                
+                // 获取当前要点击的联系人
+                const targetContact = contactElements[this.clickCount];
+                if (!targetContact) {
+                    this.sendErrorMessage(`联系人 ${this.clickCount + 1} 不存在`);
+                    return;
+                }
+                
+                // 点击联系人
+                console.log(`[DianpingExtractor] 点击第 ${this.clickCount + 1} 个联系人`);
+                targetContact.click();
+                
+                // 更新计数
+                this.clickCount++;
+                this.sendProgressUpdate();
+                
+                // 设置下一次点击
+                if (this.isClickingContacts && this.clickCount < this.totalClicks) {
+                    this.clickTimeout = setTimeout(() => {
+                        this.clickNextContact();
+                    }, this.clickInterval);
+                } else {
+                    this.isClickingContacts = false;
+                    console.log('[DianpingExtractor] 所有联系人点击完成');
+                }
+                
+            } catch (error) {
+                console.error('[DianpingExtractor] 点击联系人错误:', error);
+                this.sendErrorMessage(`点击错误: ${error.message}`);
+            }
+        }
+        
+        // 发送进度更新
+        sendProgressUpdate() {
+            try {
+                chrome.runtime.sendMessage({
+                    type: 'clickProgress',
+                    current: this.clickCount,
+                    total: this.totalClicks
+                });
+            } catch (error) {
+                console.error('[DianpingExtractor] 发送进度更新错误:', error);
+            }
+        }
+        
+        // 发送错误消息
+        sendErrorMessage(message) {
+            this.isClickingContacts = false;
+            if (this.clickTimeout) {
+                clearTimeout(this.clickTimeout);
+                this.clickTimeout = null;
+            }
+            
+            try {
+                chrome.runtime.sendMessage({
+                    type: 'clickError',
+                    message: message
+                });
+            } catch (error) {
+                console.error('[DianpingExtractor] 发送错误消息错误:', error);
+            }
         }
     }
     
