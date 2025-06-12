@@ -162,13 +162,31 @@
 
             messageNodes.forEach((node, index) => {
                 const content = (node.innerText || node.textContent).trim();
-                const uniqueKey = `${node.tagName}_${content.slice(0, 50)}`;
+                
+                // 根据className判断消息类型并添加前缀
+                let messageType = '';
+                let prefix = '';
+                if (node.className.includes('shop-text')) {
+                    messageType = 'shop';
+                    prefix = '[商家] ';
+                } else if (node.className.includes('normal-text')) {
+                    messageType = 'customer';
+                    prefix = '[客户] ';
+                } else {
+                    messageType = 'unknown';
+                    prefix = '[未知] ';
+                }
+                
+                const prefixedContent = prefix + content;
+                const uniqueKey = `${node.tagName}_${prefixedContent.slice(0, 50)}`;
 
                 if (content && !this.extractedData.has(uniqueKey)) {
                     messages.push({
                         id: `msg_${Date.now()}_${index}`,
                         type: 'chat_message',
-                        content: content,
+                        messageType: messageType,
+                        content: prefixedContent,
+                        originalContent: content,
                     });
                     this.extractedData.add(uniqueKey);
                 }
