@@ -38,7 +38,7 @@ class AIConfig:
     def _load_config(self):
         """从环境变量加载配置"""
         # 智谱AI配置
-        zhipu_key = os.getenv("ZHIPU_API_KEY", "f002fb5f2683404895ab4ef1644784ec.rUZbQuJol2r6OyKd")
+        zhipu_key = os.getenv("ZHIPU_API_KEY")
         if zhipu_key:
             self.models[AIProvider.ZHIPU] = ModelConfig(
                 provider=AIProvider.ZHIPU,
@@ -50,7 +50,7 @@ class AIConfig:
             )
         
         # Deepseek配置
-        deepseek_key = os.getenv("DEEPSEEK_API_KEY", "sk-ef6996e943914ba685a09bf6b04d5254")
+        deepseek_key = os.getenv("DEEPSEEK_API_KEY")
         if deepseek_key:
             self.models[AIProvider.DEEPSEEK] = ModelConfig(
                 provider=AIProvider.DEEPSEEK,
@@ -62,7 +62,7 @@ class AIConfig:
             )
         
         # OpenAI配置
-        openai_key = os.getenv("OPENAI_API_KEY", "sk-RKC0oOIRpRkuaike4f829a4068Eb4aEe9dFaE83eDa64F34c")
+        openai_key = os.getenv("OPENAI_API_KEY")
         if openai_key:
             self.models[AIProvider.OPENAI] = ModelConfig(
                 provider=AIProvider.OPENAI,
