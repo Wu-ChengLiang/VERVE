@@ -84,4 +84,44 @@ class BaseAdapter(ABC):
             messages=messages,
             max_tokens=self.config.max_tokens,
             temperature=self.config.temperature
+        )
+    
+    def create_customer_service_prompt_with_history(self, customer_message: str, 
+                                                   conversation_history: list = None) -> AIRequest:
+        """创建带有对话历史的客服回复提示词"""
+        
+        # 如果没有历史记录，回退到普通方法
+        if not conversation_history:
+            return self.create_customer_service_prompt(customer_message)
+        
+        system_prompt = """你是一个专业的客服代表。请根据以下对话历史和客户的最新消息，生成合适的回复。
+
+重要要求：
+1. 仔细阅读对话历史，了解客户之前的问题和需求
+2. 基于历史对话的上下文，给出连贯、相关的回复
+3. 如果客户之前提到过具体需求（如预约、咨询等），要延续这个话题
+4. 回复要礼貌、专业、有帮助
+5. 语言要自然、友好
+6. 如果客户的消息很简短或不清楚，结合历史对话来理解其意图
+7. 回复长度适中，直接回答问题
+8. 使用中文回复
+
+请直接回复客户的问题，不要添加额外的解释或前缀。"""
+
+        messages = [AIMessage(role=MessageRole.SYSTEM, content=system_prompt)]
+        
+        # 添加对话历史 - 使用更多历史记录以提供更好的上下文
+        for memory_item in conversation_history[-15:]:  # 使用最近15条历史记录
+            role = MessageRole.USER if memory_item.get("role") == "user" else MessageRole.ASSISTANT
+            content = memory_item.get("content", "")
+            if content.strip():
+                messages.append(AIMessage(role=role, content=content))
+        
+        # 添加当前客户消息
+        messages.append(AIMessage(role=MessageRole.USER, content=customer_message))
+        
+        return AIRequest(
+            messages=messages,
+            max_tokens=self.config.max_tokens,
+            temperature=0.7  # 稍微提高创造性，让回复更自然
         ) 

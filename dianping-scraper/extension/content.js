@@ -19,6 +19,12 @@
             this.clickCount = 0;
             this.totalClicks = 0;
 
+            // 记忆管理相关属性
+            this.currentChatId = null;
+            this.currentContactName = null;
+            this.conversationMemory = []; // 当前对话记忆
+            this.isMemoryEnabled = true;
+
             this.selectors = {
                 chatMessageList: '.text-message.normal-text, .rich-message, .text-message.shop-text',
                 tuanInfo: '.tuan',
@@ -30,6 +36,44 @@
 
         init() {
             this.listenForCommands();
+            this.setupAutoSave();
+        }
+
+        setupAutoSave() {
+            // 页面卸载时自动保存记忆
+            window.addEventListener('beforeunload', () => {
+                if (this.conversationMemory.length > 0 && this.currentChatId) {
+                    this.saveCurrentMemory();
+                }
+            });
+            
+            // 页面隐藏时也保存记忆
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'hidden' && this.conversationMemory.length > 0 && this.currentChatId) {
+                    this.saveCurrentMemory();
+                }
+            });
+        }
+
+        saveCurrentMemory() {
+            try {
+                chrome.runtime.sendMessage({
+                    type: 'extractedData',
+                    data: {
+                        type: 'memory_save',
+                        payload: {
+                            action: 'save',
+                            chatId: this.currentChatId,
+                            contactName: this.currentContactName,
+                            conversationMemory: this.conversationMemory.slice(),
+                            timestamp: Date.now()
+                        }
+                    }
+                });
+                console.log(`[记忆] 自动保存记忆 (${this.conversationMemory.length}条): ${this.currentContactName}`);
+            } catch (error) {
+                console.error('[记忆] 自动保存记忆错误:', error);
+            }
         }
 
         listenForCommands() {
@@ -130,6 +174,21 @@
         // New function to handle sending AI replies
         sendAIReply(replyText) {
             console.log(`[ContentScript] Received request to send AI reply: "${replyText}"`);
+            
+            // 将AI回复添加到记忆中
+            const aiReplyData = {
+                id: `ai_reply_${Date.now()}`,
+                type: 'chat_message',
+                messageType: 'shop', // AI回复算作商家回复
+                content: `[商家] ${replyText}`,
+                originalContent: replyText,
+                timestamp: Date.now(),
+                chatId: this.currentChatId,
+                contactName: this.currentContactName
+            };
+            
+            this.addToMemory(aiReplyData);
+            
             return this._executeInjectedScript({
                 action: 'testAndSend',
                 text: replyText
@@ -191,32 +250,77 @@
         }
 
         extractData() {
-            if (!this.isActive) return;
+            // 自动检测当前联系人（如果尚未设置）
+            if (!this.currentChatId) {
+                this.autoDetectCurrentContact();
+            }
             
-            const pageType = this.detectPageType();
-            
-            if (pageType === 'chat_page') {
+            try {
                 const allExtractedData = [];
-
+                
                 const { messages } = this.extractChatMessages();
                 if (messages.length > 0) {
                     allExtractedData.push(...messages);
                 }
-
+                
                 const { tuanInfo } = this.extractTuanInfo();
                 if (tuanInfo.length > 0) {
                     allExtractedData.push(...tuanInfo);
                 }
-
+                
                 if (allExtractedData.length > 0) {
                     this.sendDataToBackground({
                         type: 'dianping_data',
                         payload: {
-                            pageType,
+                            pageType: this.detectPageType(),
                             data: allExtractedData
                         }
                     });
                 }
+            } catch (error) {
+                console.error('[DianpingExtractor] 数据提取错误:', error);
+            }
+        }
+        
+        autoDetectCurrentContact() {
+            try {
+                // 尝试从页面标题或其他元素获取当前联系人信息
+                let contactName = '默认联系人';
+                let chatId = 'default_chat';
+                
+                // 尝试从URL或页面元素中获取联系人信息
+                const titleElement = document.querySelector('title');
+                if (titleElement && titleElement.textContent) {
+                    const title = titleElement.textContent.trim();
+                    // 如果标题包含联系人信息，提取它
+                    const match = title.match(/与(.+?)的对话|(.+?)的聊天/);
+                    if (match) {
+                        contactName = match[1] || match[2];
+                        chatId = `chat_${contactName}`;
+                    }
+                }
+                
+                // 尝试从聊天页面的头部获取联系人信息
+                const chatHeaderElement = document.querySelector('.chat-header .userinfo-username, .chat-title, .contact-name');
+                if (chatHeaderElement) {
+                    const headerName = chatHeaderElement.textContent.trim();
+                    if (headerName) {
+                        contactName = headerName;
+                        chatId = `chat_${contactName}`;
+                    }
+                }
+                
+                // 设置当前联系人信息
+                this.currentChatId = chatId;
+                this.currentContactName = contactName;
+                
+                console.log(`[记忆] 自动检测到当前联系人: ${contactName} (ID: ${chatId})`);
+                
+            } catch (error) {
+                console.error('[记忆] 自动检测联系人错误:', error);
+                // 设置默认值
+                this.currentChatId = 'default_chat';
+                this.currentContactName = '默认联系人';
             }
         }
         
@@ -272,14 +376,22 @@
                 const uniqueKey = `${node.tagName}_${prefixedContent.slice(0, 50)}`;
 
                 if (content && !this.extractedData.has(uniqueKey)) {
-                    messages.push({
+                    const messageData = {
                         id: `msg_${Date.now()}_${index}`,
                         type: 'chat_message',
                         messageType: messageType,
                         content: prefixedContent,
                         originalContent: content,
-                    });
+                        timestamp: Date.now(),
+                        chatId: this.currentChatId,
+                        contactName: this.currentContactName
+                    };
+                    
+                    messages.push(messageData);
                     this.extractedData.add(uniqueKey);
+                    
+                    // 添加到记忆中
+                    this.addToMemory(messageData);
                 }
             });
             
@@ -391,6 +503,9 @@
                 const contactInfo = this.getContactInfo(targetContact);
                 console.log(`[DianpingExtractor] 点击第 ${this.clickCount + 1} 个联系人: ${contactInfo.name}`);
                 
+                // 检测联系人切换并处理记忆
+                this.handleContactSwitch(contactInfo);
+                
                 targetContact.click();
                 
                 this.clickCount++;
@@ -422,6 +537,96 @@
                 chatId: contactElement.getAttribute('data-chatid') || contactElement.id || '',
                 timestamp: Date.now()
             };
+        }
+
+        handleContactSwitch(contactInfo) {
+            if (!this.isMemoryEnabled) return;
+            
+            const newChatId = contactInfo.chatId || contactInfo.name;
+            const newContactName = contactInfo.name;
+            
+            // 检测是否切换了联系人
+            if (this.currentChatId && this.currentChatId !== newChatId) {
+                console.log(`[记忆] 检测到联系人切换: ${this.currentContactName} -> ${newContactName}`);
+                
+                // 发送记忆清空请求
+                this.sendMemoryClearRequest(this.currentChatId, this.currentContactName);
+                
+                // 清空当前记忆
+                this.conversationMemory = [];
+            }
+            
+            // 更新当前联系人信息
+            this.currentChatId = newChatId;
+            this.currentContactName = newContactName;
+            
+            console.log(`[记忆] 当前聊天对象: ${newContactName} (ID: ${newChatId})`);
+        }
+
+        sendMemoryClearRequest(oldChatId, oldContactName) {
+            try {
+                chrome.runtime.sendMessage({
+                    type: 'extractedData',
+                    data: {
+                        type: 'chat_context_switch',
+                        payload: {
+                            action: 'switch',
+                            oldChatId: oldChatId,
+                            oldContactName: oldContactName,
+                            newChatId: this.currentChatId,
+                            newContactName: this.currentContactName,
+                            conversationMemory: this.conversationMemory.slice(), // 发送当前记忆的副本
+                            timestamp: Date.now()
+                        }
+                    }
+                });
+                console.log(`[记忆] 已发送记忆切换请求: ${oldContactName} -> ${this.currentContactName}`);
+            } catch (error) {
+                console.error('[记忆] 发送记忆切换请求错误:', error);
+            }
+        }
+
+        addToMemory(messageData) {
+            if (!this.isMemoryEnabled || !messageData) return;
+            
+            // 添加到本地记忆
+            this.conversationMemory.push({
+                role: messageData.messageType === 'customer' ? 'user' : 'assistant',
+                content: messageData.originalContent,
+                timestamp: messageData.timestamp,
+                messageId: messageData.id
+            });
+            
+            // 限制记忆长度，保留最近的20条消息
+            if (this.conversationMemory.length > 20) {
+                this.conversationMemory = this.conversationMemory.slice(-20);
+            }
+            
+            console.log(`[记忆] 添加消息到记忆 (${this.conversationMemory.length}/20): ${messageData.originalContent.slice(0, 50)}...`);
+            
+            // 发送记忆更新到后端
+            this.sendMemoryUpdate(messageData);
+        }
+
+        sendMemoryUpdate(messageData) {
+            try {
+                chrome.runtime.sendMessage({
+                    type: 'extractedData',
+                    data: {
+                        type: 'memory_update',
+                        payload: {
+                            action: 'add_message',
+                            chatId: this.currentChatId,
+                            contactName: this.currentContactName,
+                            message: messageData,
+                            conversationMemory: this.conversationMemory.slice(), // 发送当前记忆的副本
+                            timestamp: Date.now()
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error('[记忆] 发送记忆更新错误:', error);
+            }
         }
         
         extractCurrentContactData(contactInfo) {

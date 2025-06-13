@@ -20,6 +20,7 @@ class AIClient:
     def __init__(self):
         self.config = AIConfig()
         self.adapters: Dict[AIProvider, BaseAdapter] = {}
+        self._conversation_memory: List[Dict[str, Any]] = []  # 当前对话记忆
         self._init_adapters()
     
     def _init_adapters(self):
@@ -39,7 +40,8 @@ class AIClient:
         logger.info(f"初始化了 {len(self.adapters)} 个AI适配器: {list(self.adapters.keys())}")
     
     async def generate_customer_service_reply(self, customer_message: str, 
-                                             preferred_provider: Optional[AIProvider] = None) -> AIResponse:
+                                             preferred_provider: Optional[AIProvider] = None,
+                                             conversation_history: Optional[List[Dict[str, Any]]] = None) -> AIResponse:
         """生成客服回复"""
         if not customer_message.strip():
             raise ValueError("客户消息不能为空")
@@ -48,11 +50,25 @@ class AIClient:
         provider = self._select_provider(preferred_provider)
         adapter = self.adapters[provider]
         
-        # 创建客服提示词
-        request = adapter.create_customer_service_prompt(customer_message)
+        # 使用传入的对话历史或当前记忆
+        history_to_use = conversation_history if conversation_history is not None else self._conversation_memory
+        
+        # 调试日志
+        logger.info(f"[AI调试] 收到客户消息: {customer_message}")
+        logger.info(f"[AI调试] 对话历史长度: {len(history_to_use)}")
+        if history_to_use:
+            logger.info(f"[AI调试] 历史记录预览:")
+            for i, mem in enumerate(history_to_use[-3:], 1):
+                role = mem.get("role", "unknown")
+                content = mem.get("content", "")[:30]
+                logger.info(f"  {i}. {role}: {content}...")
+        
+        # 创建带有对话历史的客服提示词
+        request = adapter.create_customer_service_prompt_with_history(customer_message, history_to_use)
         
         logger.info(f"为客户消息生成回复，使用提供商: {provider.value}")
         logger.debug(f"客户消息: {customer_message}")
+        logger.debug(f"使用对话历史: {len(history_to_use)}条记录")
         
         try:
             response = await adapter.chat_completion(request)
@@ -142,10 +158,42 @@ class AIClient:
             logger.error(f"处理数据失败: {e}")
             raise
     
+    def set_conversation_memory(self, memory: List[Dict[str, Any]]):
+        """设置当前对话记忆"""
+        self._conversation_memory = memory.copy() if memory else []
+        logger.info(f"设置对话记忆: {len(self._conversation_memory)}条记录")
+    
+    def clear_conversation_memory(self):
+        """清空当前对话记忆"""
+        old_count = len(self._conversation_memory)
+        self._conversation_memory = []
+        logger.info(f"清空对话记忆: 已清除{old_count}条记录")
+    
+    def add_to_memory(self, role: str, content: str, message_id: Optional[str] = None):
+        """添加消息到记忆中"""
+        memory_item = {
+            "role": role,  # "user" 或 "assistant"
+            "content": content,
+            "timestamp": __import__('time').time(),
+            "messageId": message_id
+        }
+        self._conversation_memory.append(memory_item)
+        
+        # 限制记忆长度，保留最近的20条
+        if len(self._conversation_memory) > 20:
+            self._conversation_memory = self._conversation_memory[-20:]
+        
+        logger.debug(f"添加到记忆: {role} - {content[:50]}...")
+    
+    def get_memory_count(self) -> int:
+        """获取当前记忆条数"""
+        return len(self._conversation_memory)
+
     def get_status(self) -> Dict[str, Any]:
         """获取客户端状态"""
         return {
             "available_providers": [p.value for p in self.adapters.keys()],
             "total_providers": len(self.adapters),
-            "config_loaded": len(self.config.models) > 0
+            "config_loaded": len(self.config.models) > 0,
+            "memory_count": len(self._conversation_memory)
         } 
