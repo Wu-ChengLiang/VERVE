@@ -49,7 +49,7 @@ class DianpingWebSocketServer:
         self.ai_client = AIClient()
         logger.info(f"[AI] AI客户端初始化成功，可用提供商: {len(self.ai_client.adapters)}")
         
-    async def register_client(self, websocket: websockets.WebSocketServerProtocol):
+    async def register_client(self, websocket):
         """注册新客户端连接"""
         self.clients.add(websocket)
         client_info = f"{websocket.remote_address[0]}:{websocket.remote_address[1]}"
@@ -63,14 +63,14 @@ class DianpingWebSocketServer:
         }
         await websocket.send(json.dumps(welcome_msg, ensure_ascii=False))
 
-    async def unregister_client(self, websocket: websockets.WebSocketServerProtocol):
+    async def unregister_client(self, websocket):
         """注销客户端连接"""
         self.clients.discard(websocket)
         client_info = f"{websocket.remote_address[0]}:{websocket.remote_address[1]}"
         logger.info(f"[断开] 客户端: {client_info}")
         logger.info(f"[状态] 当前连接数: {len(self.clients)}")
 
-    async def handle_message(self, websocket: websockets.WebSocketServerProtocol, message: str):
+    async def handle_message(self, websocket, message: str):
         """处理来自客户端的消息"""
         try:
             data = json.loads(message)
@@ -186,8 +186,8 @@ class DianpingWebSocketServer:
             "timestamp": timestamp
         }
 
-    async def handle_client(self, websocket: websockets.WebSocketServerProtocol, path: str):
-        """处理客户端连接"""
+    async def handle_client(self, websocket):
+        """处理客户端连接 - 移除废弃的 path 参数"""
         await self.register_client(websocket)
         try:
             async for message in websocket:

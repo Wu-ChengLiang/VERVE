@@ -6,6 +6,7 @@ import os
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
 from enum import Enum
+from dotenv import load_dotenv
 
 
 class AIProvider(Enum):
@@ -37,6 +38,28 @@ class AIConfig:
     
     def _load_config(self):
         """从环境变量加载配置"""
+        # 尝试多个可能的.env文件位置
+        possible_paths = [
+            os.path.join(os.path.dirname(__file__), '.env'),  # aiclient/.env
+            os.path.join(os.path.dirname(__file__), '..', '.env'),  # 项目根目录/.env
+            '.env',  # 当前工作目录/.env
+        ]
+        
+        dotenv_loaded = False
+        for dotenv_path in possible_paths:
+            abs_path = os.path.abspath(dotenv_path)
+            if os.path.exists(abs_path):
+                load_dotenv(abs_path)
+                print(f"[配置] 已加载环境变量文件: {abs_path}")
+                dotenv_loaded = True
+                break
+        
+        if not dotenv_loaded:
+            print(f"[配置] 未找到.env文件，搜索路径:")
+            for path in possible_paths:
+                abs_path = os.path.abspath(path)
+                print(f"  - {abs_path} {'[存在]' if os.path.exists(abs_path) else '[不存在]'}")
+        
         # 智谱AI配置
         zhipu_key = os.getenv("ZHIPU_API_KEY")
         if zhipu_key:
@@ -72,6 +95,7 @@ class AIConfig:
                 max_tokens=int(os.getenv("OPENAI_MAX_TOKENS", "1000")),
                 temperature=float(os.getenv("OPENAI_TEMPERATURE", "0.7"))
             )
+
     
     def get_model_config(self, provider: AIProvider) -> Optional[ModelConfig]:
         """获取指定提供商的模型配置"""
