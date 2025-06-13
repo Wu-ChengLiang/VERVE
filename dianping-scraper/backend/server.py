@@ -2,6 +2,7 @@
 """
 大众点评网页元素读取器 - WebSocket服务器
 精简版 - 负责接收和处理来自浏览器扩展的核心数据
+集成AI客户端，自动回复客户消息
 """
 
 import asyncio
@@ -12,6 +13,11 @@ from datetime import datetime
 from typing import Set, Dict, Any
 import signal
 import sys
+import os
+
+# 添加AI客户端路径
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+from aiclient import AIClient
 
 # 配置日志
 logging.basicConfig(
@@ -40,6 +46,8 @@ class DianpingWebSocketServer:
         self.port = port
         self.clients: Set[websockets.WebSocketServerProtocol] = set()
         self.data_store: Dict[str, Any] = {}
+        self.ai_client = AIClient()
+        logger.info(f"[AI] AI客户端初始化成功，可用提供商: {len(self.ai_client.adapters)}")
         
     async def register_client(self, websocket: websockets.WebSocketServerProtocol):
         """注册新客户端连接"""
@@ -129,6 +137,16 @@ class DianpingWebSocketServer:
                 content = content.get('name', str(content)[:50])
             logger.info(f"  - {str(content)[:100]}")
         
+        # 检查是否需要AI回复
+        try:
+            ai_response = await self.ai_client.process_scraped_data(data_list)
+            if ai_response:
+                logger.info(f"[AI回复] 生成回复: {ai_response.content[:100]}...")
+                # 发送AI回复到所有连接的客户端
+                await self._broadcast_ai_reply(ai_response)
+        except Exception as e:
+            logger.error(f"[AI错误] AI处理失败: {e}")
+        
         data_id = f"dianping_list_{timestamp}"
         self.data_store[data_id] = {
             "content": data_list,
@@ -195,6 +213,36 @@ class DianpingWebSocketServer:
         logger.info(f"[成功] 服务器启动成功! 等待连接...")
         
         return start_server
+    
+    async def _broadcast_ai_reply(self, ai_response):
+        """广播AI回复到所有客户端"""
+        if not self.clients:
+            logger.warning("[广播] 没有连接的客户端，无法发送AI回复")
+            return
+        
+        message = {
+            "type": "ai_reply",
+            "content": ai_response.content,
+            "model": ai_response.model,
+            "provider": ai_response.provider,
+            "timestamp": ai_response.timestamp.isoformat()
+        }
+        
+        # 发送到所有连接的客户端
+        disconnected = []
+        for client in self.clients:
+            try:
+                await client.send(json.dumps(message, ensure_ascii=False))
+                logger.debug(f"[广播] AI回复已发送到客户端")
+            except websockets.exceptions.ConnectionClosed:
+                disconnected.append(client)
+            except Exception as e:
+                logger.error(f"[广播错误] 发送AI回复失败: {e}")
+                disconnected.append(client)
+        
+        # 清理断开的连接
+        for client in disconnected:
+            self.clients.discard(client)
 
 async def main():
     """主函数"""
