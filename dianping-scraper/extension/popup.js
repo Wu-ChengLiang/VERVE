@@ -135,7 +135,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const interval = parseInt(clickIntervalSelect.value) || 2000;
 
         if (count < 1 || count > 50) {
-            showMessage('请输入1-50之间的数量', 'error');
+            showMessage('请输入1-50之间的联系人数量', 'error');
             return;
         }
 
@@ -146,13 +146,13 @@ document.addEventListener('DOMContentLoaded', () => {
             interval: interval
         }, (response) => {
             if (chrome.runtime.lastError) {
-                console.error("启动联系人点击错误:", chrome.runtime.lastError.message);
+                console.error("启动批量数据提取错误:", chrome.runtime.lastError.message);
                 showMessage('启动失败', 'error');
             } else if (response && response.status === 'started') {
                 updateClickUI(true);
-                clickProgressSpan.textContent = `0/${count}`;
+                clickProgressSpan.textContent = `0/${count} - 准备开始`;
                 clickProgressSpan.className = 'value connected';
-                showMessage(`开始点击${count}个联系人`, 'success');
+                showMessage(`开始批量提取${count}个联系人的数据`, 'success');
             }
         });
     });
@@ -166,10 +166,10 @@ document.addEventListener('DOMContentLoaded', () => {
             tabId: currentTabId
         }, (response) => {
             if (chrome.runtime.lastError) {
-                console.error("停止联系人点击错误:", chrome.runtime.lastError.message);
+                console.error("停止批量数据提取错误:", chrome.runtime.lastError.message);
             } else if (response && response.status === 'stopped') {
                 updateClickUI(false);
-                showMessage('已停止点击联系人', 'warning');
+                showMessage('已停止批量数据提取', 'warning');
             }
         });
     });
@@ -177,10 +177,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // 监听来自content script的进度更新
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         if (request.type === 'clickProgress') {
-            clickProgressSpan.textContent = `${request.current}/${request.total}`;
+            const progressText = request.status ? 
+                `${request.current}/${request.total} - ${request.status}` : 
+                `${request.current}/${request.total}`;
+            clickProgressSpan.textContent = progressText;
+            
             if (request.current >= request.total) {
                 updateClickUI(false);
-                showMessage('联系人点击完成', 'success');
+                showMessage('联系人数据提取完成', 'success');
             }
         } else if (request.type === 'clickError') {
             updateClickUI(false);
