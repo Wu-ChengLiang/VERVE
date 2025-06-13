@@ -20,7 +20,6 @@
             this.clickTimeout = null;
             this.clickCount = 0;
             this.totalClicks = 0;
-            this.clickInterval = 2000;
 
             this.selectors = {
                 chatMessageList: '.text-message.normal-text, .rich-message, .text-message.shop-text',
@@ -270,10 +269,19 @@
             this.clickCount = 0;
             this.totalClicks = count;
             this.clickInterval = interval;
-            this.pageLoadWaitTime = 3000; // 等待页面加载的时间
-            this.extractionWaitTime = 5000; // 等待数据提取的时间
             
-            console.log(`[DianpingExtractor] 开始点击联系人并提取数据，总数: ${count}, 间隔: ${interval}ms`);
+            // 根据间隔设置等待时间
+            if (interval <= 1000) {
+                // 中速模式：1秒以下
+                this.pageLoadWaitTime = Math.max(300, interval * 0.5);
+                this.extractionWaitTime = Math.max(500, interval);
+            } else {
+                // 标准/慢速模式：1秒以上
+                this.pageLoadWaitTime = Math.min(1500, interval * 0.6);
+                this.extractionWaitTime = Math.min(2500, interval * 0.8);
+            }
+            
+            console.log(`[DianpingExtractor] 开始批量提取，总数: ${count}, 间隔: ${interval}ms`);
             this.sendProgressUpdate();
             this.clickNextContact();
         }
@@ -288,15 +296,14 @@
                 this.clickTimeout = null;
             }
             
-            console.log('[DianpingExtractor] 联系人点击已停止');
-            this.sendErrorMessage('用户手动停止');
+            console.log('[DianpingExtractor] 批量提取已停止');
         }
         
         // 点击下一个联系人
         clickNextContact() {
             if (!this.isClickingContacts || this.clickCount >= this.totalClicks) {
                 this.isClickingContacts = false;
-                console.log('[DianpingExtractor] 联系人点击完成');
+                console.log('[DianpingExtractor] 批量提取完成');
                 this.sendProgressUpdate();
                 return;
             }
@@ -342,25 +349,18 @@
         // 获取联系人信息
         getContactInfo(contactElement) {
             let name = '未知联系人';
-            let chatId = '';
-            
             try {
-                // 尝试从不同位置获取联系人姓名
-                const nameElement = contactElement.querySelector('.userinfo-username, .username, [data-chatid]');
+                const nameElement = contactElement.querySelector('.userinfo-username');
                 if (nameElement) {
-                    name = nameElement.textContent || nameElement.innerText || name;
+                    name = nameElement.textContent.trim();
                 }
-                
-                // 获取聊天ID
-                chatId = contactElement.getAttribute('data-chatid') || contactElement.id || '';
-                
             } catch (error) {
                 console.error('[DianpingExtractor] 获取联系人信息错误:', error);
             }
             
             return {
-                name: name.trim(),
-                chatId: chatId,
+                name: name,
+                chatId: contactElement.getAttribute('data-chatid') || contactElement.id || '',
                 timestamp: Date.now()
             };
         }
@@ -431,13 +431,9 @@
             if (!this.isClickingContacts) return;
             
             if (this.clickCount < this.totalClicks) {
-                console.log(`[DianpingExtractor] 准备处理下一个联系人 (${this.clickCount + 1}/${this.totalClicks})`);
-                this.clickTimeout = setTimeout(() => {
-                    this.clickNextContact();
-                }, this.clickInterval);
+                this.clickTimeout = setTimeout(() => this.clickNextContact(), this.clickInterval);
             } else {
                 this.isClickingContacts = false;
-                console.log('[DianpingExtractor] 所有联系人数据提取完成');
                 this.sendProgressUpdate('所有联系人处理完成');
             }
         }

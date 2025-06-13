@@ -139,6 +139,9 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        // 显示当前模式
+        let speedMode = interval <= 1000 ? '中速' : (interval <= 2000 ? '标准' : '慢速');
+
         chrome.runtime.sendMessage({
             type: 'startClickContacts',
             tabId: currentTabId,
@@ -150,9 +153,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 showMessage('启动失败', 'error');
             } else if (response && response.status === 'started') {
                 updateClickUI(true);
-                clickProgressSpan.textContent = `0/${count} - 准备开始`;
+                clickProgressSpan.textContent = `0/${count} - 准备开始(${speedMode})`;
                 clickProgressSpan.className = 'value connected';
-                showMessage(`开始批量提取${count}个联系人的数据`, 'success');
+                showMessage(`开始批量提取${count}个联系人的数据 (${speedMode})`, 'success');
             }
         });
     });
