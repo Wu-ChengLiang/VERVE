@@ -6,16 +6,14 @@
 (function() {
     'use strict';
     
-    console.log('[DianpingExtractor] Content Script 加载完成');
+    console.log('[DianpingExtractor] Content Script 加载完成 (V4)');
     
     class DianpingDataExtractor {
         constructor() {
             this.isActive = false;
             this.observer = null;
             this.pollingInterval = null;
-            this.extractedData = new Set(); // 防止重复提取
-
-            // 联系人点击相关属性
+            this.extractedData = new Set();
             this.isClickingContacts = false;
             this.clickTimeout = null;
             this.clickCount = 0;
@@ -24,7 +22,7 @@
             this.selectors = {
                 chatMessageList: '.text-message.normal-text, .rich-message, .text-message.shop-text',
                 tuanInfo: '.tuan',
-                contactItems: '.chat-list-item', // 联系人元素选择器
+                contactItems: '.chat-list-item',
             };
             
             this.init();
@@ -54,8 +52,63 @@
                         this.stopClickContacts();
                         sendResponse({ status: 'stopped' });
                         break;
+                    case 'testSendMessage':
+                        this.executeTestSend()
+                            .then(result => sendResponse(result))
+                            .catch(error => sendResponse({ status: 'failed', message: error.message }));
+                        break;
                 }
                 return true;
+            });
+        }
+        
+        executeTestSend() {
+            console.log('[ContentScript] Preparing to inject script into main world...');
+            
+            return new Promise((resolve, reject) => {
+                const scriptId = 'verve-injector-script';
+                const eventName = 'verveTestSendResult';
+
+                // Cleanup previous script if it exists
+                const oldScript = document.getElementById(scriptId);
+                if (oldScript) {
+                    oldScript.remove();
+                }
+
+                // 1. Define the listener for the response event
+                const listener = (event) => {
+                    console.log(`[ContentScript] Received result from injected script:`, event.detail);
+                    
+                    if (event.detail.status === 'success') {
+                        resolve({ status: 'success', message: event.detail.message });
+                    } else {
+                        reject(new Error(event.detail.message || 'Injected script reported failure.'));
+                    }
+
+                    // 2. Cleanup: remove the event listener and the script
+                    window.removeEventListener(eventName, listener);
+                    const scriptElement = document.getElementById(scriptId);
+                    if (scriptElement) {
+                        scriptElement.remove();
+                    }
+                };
+
+                // 3. Add the event listener to the window
+                window.addEventListener(eventName, listener, { once: true });
+
+                // 4. Create and inject the script element
+                const script = document.createElement('script');
+                script.id = scriptId;
+                script.src = chrome.runtime.getURL('injector.js');
+                
+                script.onload = () => console.log('[ContentScript] Injected script loaded successfully.');
+                script.onerror = (e) => {
+                    console.error('[ContentScript] Failed to load the injector script:', e);
+                    window.removeEventListener(eventName, listener); // Cleanup listener on error
+                    reject(new Error('Failed to load the injector script. Check web_accessible_resources in manifest.'));
+                };
+                
+                (document.head || document.documentElement).appendChild(script);
             });
         }
         
@@ -178,7 +231,6 @@
             messageNodes.forEach((node, index) => {
                 const content = (node.innerText || node.textContent).trim();
                 
-                // 根据className判断消息类型并添加前缀
                 let messageType = '';
                 let prefix = '';
                 if (node.className.includes('shop-text')) {
@@ -258,10 +310,9 @@
             return { tuanInfo: tuanInfoList, count: tuanInfoList.length };
         }
         
-        // 开始点击联系人
         startClickContacts(count = 10, interval = 2000) {
             if (this.isClickingContacts) {
-                console.log('[DianpingExtractor] 联系人点击已在进行中');
+                console.log('[DianpingExtractor] 批量提取已在进行中');
                 return;
             }
             
@@ -269,24 +320,16 @@
             this.clickCount = 0;
             this.totalClicks = count;
             this.clickInterval = interval;
-            
-            // 根据间隔设置等待时间
-            if (interval <= 1000) {
-                // 中速模式：1秒以下
-                this.pageLoadWaitTime = Math.max(300, interval * 0.5);
-                this.extractionWaitTime = Math.max(500, interval);
-            } else {
-                // 标准/慢速模式：1秒以上
-                this.pageLoadWaitTime = Math.min(1500, interval * 0.6);
-                this.extractionWaitTime = Math.min(2500, interval * 0.8);
-            }
+
+            // 动态调整内部延迟时间
+            this.pageLoadWaitTime = Math.min(1500, interval * 0.6);
+            this.extractionWaitTime = Math.min(2500, interval * 0.8);
             
             console.log(`[DianpingExtractor] 开始批量提取，总数: ${count}, 间隔: ${interval}ms`);
             this.sendProgressUpdate();
             this.clickNextContact();
         }
         
-        // 停止点击联系人
         stopClickContacts() {
             if (!this.isClickingContacts) return;
             
@@ -299,7 +342,6 @@
             console.log('[DianpingExtractor] 批量提取已停止');
         }
         
-        // 点击下一个联系人
         clickNextContact() {
             if (!this.isClickingContacts || this.clickCount >= this.totalClicks) {
                 this.isClickingContacts = false;
@@ -309,7 +351,6 @@
             }
             
             try {
-                // 查找所有联系人元素
                 const contactElements = this.findAllElements(this.selectors.contactItems, document);
                 
                 if (contactElements.length === 0) {
@@ -317,25 +358,20 @@
                     return;
                 }
                 
-                // 获取当前要点击的联系人
                 const targetContact = contactElements[this.clickCount];
                 if (!targetContact) {
                     this.sendErrorMessage(`联系人 ${this.clickCount + 1} 不存在`);
                     return;
                 }
                 
-                // 获取联系人信息
                 const contactInfo = this.getContactInfo(targetContact);
                 console.log(`[DianpingExtractor] 点击第 ${this.clickCount + 1} 个联系人: ${contactInfo.name}`);
                 
-                // 点击联系人
                 targetContact.click();
                 
-                // 更新计数
                 this.clickCount++;
                 this.sendProgressUpdate(`正在处理联系人: ${contactInfo.name}`);
                 
-                // 等待页面加载后提取数据
                 setTimeout(() => {
                     this.extractCurrentContactData(contactInfo);
                 }, this.pageLoadWaitTime);
@@ -346,7 +382,6 @@
             }
         }
         
-        // 获取联系人信息
         getContactInfo(contactElement) {
             let name = '未知联系人';
             try {
@@ -365,20 +400,16 @@
             };
         }
         
-        // 提取当前联系人的数据
         extractCurrentContactData(contactInfo) {
             if (!this.isClickingContacts) return;
             
             console.log(`[DianpingExtractor] 开始提取联系人 ${contactInfo.name} 的数据`);
             
             try {
-                // 执行数据提取
                 const allExtractedData = [];
                 
-                // 提取聊天消息
                 const { messages } = this.extractChatMessages();
                 if (messages.length > 0) {
-                    // 为消息添加联系人信息
                     const messagesWithContact = messages.map(msg => ({
                         ...msg,
                         contactInfo: contactInfo,
@@ -388,10 +419,8 @@
                     allExtractedData.push(...messagesWithContact);
                 }
                 
-                // 提取团购信息
                 const { tuanInfo } = this.extractTuanInfo();
                 if (tuanInfo.length > 0) {
-                    // 为团购信息添加联系人信息
                     const tuanWithContact = tuanInfo.map(tuan => ({
                         ...tuan,
                         contactInfo: contactInfo,
@@ -401,7 +430,6 @@
                     allExtractedData.push(...tuanWithContact);
                 }
                 
-                // 发送数据到后台
                 if (allExtractedData.length > 0) {
                     this.sendDataToBackground({
                         type: 'dianping_contact_data',
@@ -420,13 +448,11 @@
                 console.error('[DianpingExtractor] 提取联系人数据错误:', error);
             }
             
-            // 等待一段时间后继续下一个联系人
             setTimeout(() => {
                 this.proceedToNextContact();
             }, this.extractionWaitTime);
         }
         
-        // 继续处理下一个联系人
         proceedToNextContact() {
             if (!this.isClickingContacts) return;
             
@@ -438,7 +464,6 @@
             }
         }
         
-        // 发送进度更新
         sendProgressUpdate(status = '') {
             try {
                 chrome.runtime.sendMessage({
@@ -452,7 +477,6 @@
             }
         }
         
-        // 发送错误消息
         sendErrorMessage(message) {
             this.isClickingContacts = false;
             if (this.clickTimeout) {
@@ -471,9 +495,7 @@
         }
     }
     
-    // 实例化提取器
     if (!window.dianpingExtractor) {
         window.dianpingExtractor = new DianpingDataExtractor();
     }
-    
 })();

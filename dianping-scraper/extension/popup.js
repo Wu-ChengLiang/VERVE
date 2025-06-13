@@ -18,6 +18,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const clickIntervalSelect = document.getElementById('clickInterval');
     const clickProgressSpan = document.getElementById('clickProgress');
 
+    // 测试发送按钮
+    const testSendButton = document.getElementById('testSendButton');
+
     let currentTabId = null;
     let isExtracting = false;
     let isClickingContacts = false;
@@ -173,6 +176,36 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (response && response.status === 'stopped') {
                 updateClickUI(false);
                 showMessage('已停止批量数据提取', 'warning');
+            }
+        });
+    });
+
+    // 测试发送功能
+    testSendButton.addEventListener('click', () => {
+        if (!currentTabId) {
+            showMessage('请先选择一个大众点评页面', 'error');
+            return;
+        }
+
+        // 禁用按钮避免重复点击
+        testSendButton.disabled = true;
+        testSendButton.style.opacity = '0.6';
+
+        chrome.runtime.sendMessage({
+            type: 'testSendMessage',
+            tabId: currentTabId
+        }, (response) => {
+            // 恢复按钮状态
+            testSendButton.disabled = false;
+            testSendButton.style.opacity = '1';
+
+            if (chrome.runtime.lastError) {
+                console.error("测试发送错误:", chrome.runtime.lastError.message);
+                showMessage('测试发送失败', 'error');
+            } else if (response && response.status === 'success') {
+                showMessage('测试消息发送成功！', 'success');
+            } else if (response && response.status === 'failed') {
+                showMessage(response.message || '测试发送失败', 'error');
             }
         });
     });

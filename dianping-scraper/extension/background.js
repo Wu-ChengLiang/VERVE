@@ -130,6 +130,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             });
             return true;
 
+        case 'testSendMessage':
+            if (!tabId) {
+                sendResponse({ status: 'failed', message: '无tabId' });
+                return true;
+            }
+            console.log(`[Background] 测试发送消息 tab ${tabId}`);
+            chrome.tabs.sendMessage(tabId, { type: 'testSendMessage' }, (response) => {
+                if (chrome.runtime.lastError) {
+                    console.error('[Background] 测试发送错误:', chrome.runtime.lastError.message);
+                    sendResponse({ status: 'failed', message: chrome.runtime.lastError.message });
+                } else if (response && response.status === 'success') {
+                    sendResponse({ status: 'success' });
+                } else {
+                    sendResponse({ status: 'failed', message: response?.message || '未知错误' });
+                }
+            });
+            return true;
+
         case 'clickProgress':
         case 'clickError':
             // 转发进度和错误消息到popup

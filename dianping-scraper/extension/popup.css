@@ -159,7 +159,8 @@ body {
 /* 控制面板 */
 .controls {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    flex-wrap: wrap;
     gap: 8px;
 }
 
@@ -198,13 +199,18 @@ body {
 }
 
 .btn-secondary {
-    background-color: var(--surface-color);
-    color: var(--text-primary);
-    border: 1px solid var(--border-color);
+    background: linear-gradient(135deg, #6c757d, #5a6268);
+    color: white;
 }
 
-.btn-secondary:hover {
-    background-color: #e9ecef;
+.btn-test {
+    background: linear-gradient(135deg, #17a2b8, #138496);
+    color: white;
+}
+
+.btn-test:hover {
+    background: linear-gradient(135deg, #138496, #117a8b);
+    transform: translateY(-1px);
 }
 
 .btn-link {

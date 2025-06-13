@@ -36,8 +36,8 @@
     ],
     "web_accessible_resources": [
         {
-            "resources": ["icons/*.png", "data.html"],
-            "matches": ["<all_urls>"]
+            "resources": ["icons/*.png", "data.html", "injector.js"],
+            "matches": ["*://*.dianping.com/*"]
         }
     ]
 } 
