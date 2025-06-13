@@ -26,6 +26,33 @@ function connectWebSocket() {
 
     websocket.onmessage = (event) => {
         console.log('[Background] 收到服务器消息:', event.data);
+        try {
+            const command = JSON.parse(event.data);
+            if (command.type === 'sendAIReply' && command.text) {
+                console.log(`[Background] 收到AI回复指令，准备发送: "${command.text}"`);
+                // Find the active Dianping tab and send the message to it
+                chrome.tabs.query({ active: true, url: "*://*.dianping.com/*" }, (tabs) => {
+                    if (tabs.length > 0) {
+                        const targetTabId = tabs[0].id;
+                        console.log(`[Background] 找到目标Tab ${targetTabId}，正在发送...`);
+                        chrome.tabs.sendMessage(targetTabId, {
+                            type: 'sendAIReply',
+                            text: command.text
+                        }, (response) => {
+                            if (chrome.runtime.lastError) {
+                                console.error('[Background] 发送AI回复失败:', chrome.runtime.lastError.message);
+                            } else {
+                                console.log('[Background] AI回复指令发送成功，前端响应:', response);
+                            }
+                        });
+                    } else {
+                        console.warn('[Background] 未找到活跃的大众点评Tab来发送AI回复。');
+                    }
+                });
+            }
+        } catch (error) {
+            console.warn('[Background]收到的服务器消息不是一个有效的JSON指令。', error);
+        }
     };
 
     websocket.onclose = () => {

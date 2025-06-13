@@ -220,12 +220,10 @@ class DianpingWebSocketServer:
             logger.warning("[广播] 没有连接的客户端，无法发送AI回复")
             return
         
+        # 发送AI回复指令，让前端自动发送
         message = {
-            "type": "ai_reply",
-            "content": ai_response.content,
-            "model": ai_response.model,
-            "provider": ai_response.provider,
-            "timestamp": ai_response.timestamp.isoformat()
+            "type": "sendAIReply",
+            "text": ai_response.content
         }
         
         # 发送到所有连接的客户端
@@ -233,7 +231,7 @@ class DianpingWebSocketServer:
         for client in self.clients:
             try:
                 await client.send(json.dumps(message, ensure_ascii=False))
-                logger.debug(f"[广播] AI回复已发送到客户端")
+                logger.info(f"[广播] AI回复指令已发送: {ai_response.content[:50]}...")
             except websockets.exceptions.ConnectionClosed:
                 disconnected.append(client)
             except Exception as e:

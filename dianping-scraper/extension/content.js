@@ -57,58 +57,82 @@
                             .then(result => sendResponse(result))
                             .catch(error => sendResponse({ status: 'failed', message: error.message }));
                         break;
+                    case 'sendAIReply':
+                        this.sendAIReply(request.text)
+                             .then(result => sendResponse(result))
+                             .catch(error => sendResponse({ status: 'failed', message: error.message }));
+                        break;
                 }
                 return true;
             });
         }
         
-        executeTestSend() {
-            console.log('[ContentScript] Preparing to inject script into main world...');
+        // --- Injected Script Logic ---
+        
+        // This is the main function to communicate with the injected script.
+        // It injects the script and sends it a task to perform.
+        _executeInjectedScript(task) {
+            console.log(`[ContentScript] Injecting script to perform task:`, task);
             
             return new Promise((resolve, reject) => {
                 const scriptId = 'verve-injector-script';
-                const eventName = 'verveTestSendResult';
+                const taskEventName = 'verveInjectorTask';
+                const resultEventName = 'verveInjectorResult';
 
                 // Cleanup previous script if it exists
-                const oldScript = document.getElementById(scriptId);
-                if (oldScript) {
-                    oldScript.remove();
-                }
+                document.getElementById(scriptId)?.remove();
 
-                // 1. Define the listener for the response event
-                const listener = (event) => {
-                    console.log(`[ContentScript] Received result from injected script:`, event.detail);
-                    
+                // 1. Define the listener for the response event from the injected script
+                const resultListener = (event) => {
+                    console.log(`[ContentScript] Received result:`, event.detail);
                     if (event.detail.status === 'success') {
                         resolve({ status: 'success', message: event.detail.message });
                     } else {
-                        reject(new Error(event.detail.message || 'Injected script reported failure.'));
+                        reject(new Error(event.detail.message || 'Injected script failed.'));
                     }
-
-                    // 2. Cleanup: remove the event listener and the script
-                    window.removeEventListener(eventName, listener);
-                    const scriptElement = document.getElementById(scriptId);
-                    if (scriptElement) {
-                        scriptElement.remove();
-                    }
+                    // Auto-cleanup
+                    window.removeEventListener(resultEventName, resultListener);
+                    document.getElementById(scriptId)?.remove();
                 };
 
-                // 3. Add the event listener to the window
-                window.addEventListener(eventName, listener, { once: true });
+                // 2. Add the result listener
+                window.addEventListener(resultEventName, resultListener, { once: true });
 
-                // 4. Create and inject the script element
+                // 3. Create and inject the script element
                 const script = document.createElement('script');
                 script.id = scriptId;
                 script.src = chrome.runtime.getURL('injector.js');
                 
-                script.onload = () => console.log('[ContentScript] Injected script loaded successfully.');
+                // 4. Once the script is loaded, dispatch the task to it
+                script.onload = () => {
+                    console.log('[ContentScript] Injected script loaded. Sending task...');
+                    window.dispatchEvent(new CustomEvent(taskEventName, { detail: task }));
+                };
+                
                 script.onerror = (e) => {
-                    console.error('[ContentScript] Failed to load the injector script:', e);
-                    window.removeEventListener(eventName, listener); // Cleanup listener on error
-                    reject(new Error('Failed to load the injector script. Check web_accessible_resources in manifest.'));
+                    console.error('[ContentScript] Failed to load injector script:', e);
+                    window.removeEventListener(resultEventName, resultListener); // Cleanup on error
+                    reject(new Error('Failed to load injector script.'));
                 };
                 
                 (document.head || document.documentElement).appendChild(script);
+            });
+        }
+
+        // The original test function, now simplified
+        executeTestSend() {
+            return this._executeInjectedScript({
+                action: 'testAndSend',
+                text: '这是一个自动发送的测试消息'
+            });
+        }
+
+        // New function to handle sending AI replies
+        sendAIReply(replyText) {
+            console.log(`[ContentScript] Received request to send AI reply: "${replyText}"`);
+            return this._executeInjectedScript({
+                action: 'testAndSend',
+                text: replyText
             });
         }
         
