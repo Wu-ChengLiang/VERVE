@@ -159,7 +159,8 @@ body {
 /* 控制面板 */
 .controls {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    flex-wrap: wrap;
     gap: 8px;
 }
 
@@ -198,13 +199,18 @@ body {
 }
 
 .btn-secondary {
-    background-color: var(--surface-color);
-    color: var(--text-primary);
-    border: 1px solid var(--border-color);
+    background: linear-gradient(135deg, #6c757d, #5a6268);
+    color: white;
 }
 
-.btn-secondary:hover {
-    background-color: #e9ecef;
+.btn-test {
+    background: linear-gradient(135deg, #17a2b8, #138496);
+    color: white;
+}
+
+.btn-test:hover {
+    background: linear-gradient(135deg, #138496, #117a8b);
+    transform: translateY(-1px);
 }
 
 .btn-link {
@@ -330,6 +336,30 @@ body {
     to {
         transform: rotate(360deg);
     }
+}
+
+/* 输入控件样式 */
+.contact-input,
+.contact-select {
+    padding: 4px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-size: 13px;
+    background-color: var(--background-color);
+    color: var(--text-primary);
+    min-width: 80px;
+}
+
+.contact-input:focus,
+.contact-select:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(255, 105, 0, 0.1);
+}
+
+.contact-input[type="number"] {
+    text-align: center;
+    width: 60px;
 }
 
 /* 响应式设计 */

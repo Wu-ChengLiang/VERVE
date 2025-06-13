@@ -1,441 +1,525 @@
 /**
  * 大众点评数据提取器 - Content Script
- * 在大众点评网页中运行，负责DOM监听和数据提取
+ * 精简版 - 只保留核心监听和数据提取功能
  */
 
 (function() {
     'use strict';
     
-    console.log('[DianpingExtractor] Content Script 加载完成');
+    console.log('[DianpingExtractor] Content Script 加载完成 (V4)');
     
     class DianpingDataExtractor {
         constructor() {
             this.isActive = false;
             this.observer = null;
-            this.websocketManager = null;
-            this.extractedData = new Set(); // 防止重复提取
-            this.lastExtractTime = 0;
-            this.extractCooldown = 2000; // 2秒冷却期
-            
-            // 大众点评特定选择器
+            this.pollingInterval = null;
+            this.extractedData = new Set();
+            this.isClickingContacts = false;
+            this.clickTimeout = null;
+            this.clickCount = 0;
+            this.totalClicks = 0;
+
             this.selectors = {
-                // 餐厅列表页面
-                restaurantList: '.shop-list .shop-item',
-                restaurantItem: {
-                    name: '.shop-name, .shop-title, h3, h4',
-                    rating: '.rating-num, .score, .point',
-                    address: '.shop-addr, .address',
-                    price: '.price, .avg-price, .per-price',
-                    category: '.shop-type, .category',
-                    distance: '.distance',
-                    image: 'img'
-                },
-                
-                // 餐厅详情页面
-                restaurantDetail: {
-                    name: '.shop-name, .shop-title, h1',
-                    rating: '.rating-num, .score',
-                    address: '.shop-addr, .address',
-                    phone: '.shop-phone, .phone',
-                    hours: '.hours, .business-hours',
-                    tags: '.shop-tags .tag, .tags .tag'
-                },
-                
-                // 评论列表
-                reviewList: '.reviews .review-item, .comment-list .comment-item',
-                reviewItem: {
-                    user: '.user-name, .reviewer-name',
-                    rating: '.rating, .score',
-                    content: '.review-content, .comment-content',
-                    date: '.review-date, .comment-date',
-                    useful: '.useful-count'
-                }
+                chatMessageList: '.text-message.normal-text, .rich-message, .text-message.shop-text',
+                tuanInfo: '.tuan',
+                contactItems: '.chat-list-item',
             };
             
             this.init();
         }
-        
-        /**
-         * 初始化提取器
-         */
+
         init() {
-            console.log('[DianpingExtractor] 初始化数据提取器...');
-            
-            // 等待WebSocket管理器加载
-            this.waitForWebSocket();
-            
-            // 监听页面变化
-            this.startObserving();
-            
-            // 监听WebSocket状态
-            this.listenWebSocketStatus();
-            
-            // 初始数据提取
-            this.scheduleExtraction();
+            this.listenForCommands();
         }
-        
-        /**
-         * 等待WebSocket管理器加载
-         */
-        waitForWebSocket() {
-            const checkWebSocket = () => {
-                if (window.DianpingWebSocketManager) {
-                    console.log('[DianpingExtractor] WebSocket管理器已就绪');
-                    this.websocketManager = window.DianpingWebSocketManager;
-                    this.isActive = true;
-                } else {
-                    // 加载WebSocket脚本
-                    this.loadWebSocketScript();
-                    setTimeout(checkWebSocket, 1000);
+
+        listenForCommands() {
+            chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+                console.log(`[DianpingExtractor] 收到命令: ${request.type}`);
+                switch (request.type) {
+                    case 'startExtraction':
+                        this.start();
+                        sendResponse({ status: 'started' });
+                        break;
+                    case 'stopExtraction':
+                        this.stop();
+                        sendResponse({ status: 'stopped' });
+                        break;
+                    case 'startClickContacts':
+                        this.startClickContacts(request.count, request.interval);
+                        sendResponse({ status: 'started' });
+                        break;
+                    case 'stopClickContacts':
+                        this.stopClickContacts();
+                        sendResponse({ status: 'stopped' });
+                        break;
+                    case 'testSendMessage':
+                        this.executeTestSend()
+                            .then(result => sendResponse(result))
+                            .catch(error => sendResponse({ status: 'failed', message: error.message }));
+                        break;
+                    case 'sendAIReply':
+                        this.sendAIReply(request.text)
+                             .then(result => sendResponse(result))
+                             .catch(error => sendResponse({ status: 'failed', message: error.message }));
+                        break;
                 }
-            };
-            checkWebSocket();
-        }
-        
-        /**
-         * 加载WebSocket脚本
-         */
-        loadWebSocketScript() {
-            if (document.querySelector('script[src*="websocket.js"]')) {
-                return; // 已加载
-            }
-            
-            const script = document.createElement('script');
-            script.src = chrome.runtime.getURL('websocket.js');
-            script.onload = () => {
-                console.log('[DianpingExtractor] WebSocket脚本加载完成');
-            };
-            script.onerror = (error) => {
-                console.error('[DianpingExtractor] WebSocket脚本加载失败:', error);
-            };
-            
-            (document.head || document.documentElement).appendChild(script);
-        }
-        
-        /**
-         * 监听WebSocket连接状态
-         */
-        listenWebSocketStatus() {
-            document.addEventListener('websocket-status', (event) => {
-                const { connected } = event.detail;
-                console.log('[DianpingExtractor] WebSocket状态变更:', connected ? '已连接' : '已断开');
-                
-                if (connected && this.isActive) {
-                    // 连接成功后立即提取一次数据
-                    this.scheduleExtraction();
-                }
+                return true;
             });
         }
         
-        /**
-         * 开始监听DOM变化
-         */
-        startObserving() {
-            // 创建MutationObserver监听页面变化
-            this.observer = new MutationObserver((mutations) => {
-                let shouldExtract = false;
-                
-                mutations.forEach((mutation) => {
-                    // 检查是否有新节点添加
-                    if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
-                        mutation.addedNodes.forEach((node) => {
-                            if (node.nodeType === Node.ELEMENT_NODE) {
-                                // 检查是否是我们关心的元素
-                                if (this.isRelevantElement(node)) {
-                                    shouldExtract = true;
-                                }
-                            }
-                        });
+        // --- Injected Script Logic ---
+        
+        // This is the main function to communicate with the injected script.
+        // It injects the script and sends it a task to perform.
+        _executeInjectedScript(task) {
+            console.log(`[ContentScript] Injecting script to perform task:`, task);
+            
+            return new Promise((resolve, reject) => {
+                const scriptId = 'verve-injector-script';
+                const taskEventName = 'verveInjectorTask';
+                const resultEventName = 'verveInjectorResult';
+
+                // Cleanup previous script if it exists
+                document.getElementById(scriptId)?.remove();
+
+                // 1. Define the listener for the response event from the injected script
+                const resultListener = (event) => {
+                    console.log(`[ContentScript] Received result:`, event.detail);
+                    if (event.detail.status === 'success') {
+                        resolve({ status: 'success', message: event.detail.message });
+                    } else {
+                        reject(new Error(event.detail.message || 'Injected script failed.'));
                     }
-                });
+                    // Auto-cleanup
+                    window.removeEventListener(resultEventName, resultListener);
+                    document.getElementById(scriptId)?.remove();
+                };
+
+                // 2. Add the result listener
+                window.addEventListener(resultEventName, resultListener, { once: true });
+
+                // 3. Create and inject the script element
+                const script = document.createElement('script');
+                script.id = scriptId;
+                script.src = chrome.runtime.getURL('injector.js');
                 
-                if (shouldExtract) {
-                    this.scheduleExtraction();
-                }
+                // 4. Once the script is loaded, dispatch the task to it
+                script.onload = () => {
+                    console.log('[ContentScript] Injected script loaded. Sending task...');
+                    window.dispatchEvent(new CustomEvent(taskEventName, { detail: task }));
+                };
+                
+                script.onerror = (e) => {
+                    console.error('[ContentScript] Failed to load injector script:', e);
+                    window.removeEventListener(resultEventName, resultListener); // Cleanup on error
+                    reject(new Error('Failed to load injector script.'));
+                };
+                
+                (document.head || document.documentElement).appendChild(script);
             });
-            
-            // 开始观察
-            this.observer.observe(document.body, {
-                childList: true,
-                subtree: true
+        }
+
+        // The original test function, now simplified
+        executeTestSend() {
+            return this._executeInjectedScript({
+                action: 'testAndSend',
+                text: '这是一个自动发送的测试消息'
             });
-            
-            console.log('[DianpingExtractor] DOM监听已启动');
+        }
+
+        // New function to handle sending AI replies
+        sendAIReply(replyText) {
+            console.log(`[ContentScript] Received request to send AI reply: "${replyText}"`);
+            return this._executeInjectedScript({
+                action: 'testAndSend',
+                text: replyText
+            });
         }
         
-        /**
-         * 检查元素是否相关
-         */
-        isRelevantElement(element) {
-            const relevantClasses = [
-                'shop-item', 'shop-list', 'restaurant-item',
-                'review-item', 'comment-item',
-                'shop-detail', 'restaurant-detail'
-            ];
-            
-            return relevantClasses.some(className => 
-                element.classList?.contains(className) ||
-                element.querySelector(`.${className}`)
-            );
-        }
-        
-        /**
-         * 安排数据提取（防抖）
-         */
-        scheduleExtraction() {
-            const now = Date.now();
-            if (now - this.lastExtractTime < this.extractCooldown) {
-                return; // 冷却期内，跳过
-            }
-            
-            this.lastExtractTime = now;
-            
-            // 延迟执行，等待DOM稳定
-            setTimeout(() => {
-                this.extractData();
-            }, 500);
-        }
-        
-        /**
-         * 提取数据
-         */
-        extractData() {
-            if (!this.isActive || !this.websocketManager) {
-                console.log('[DianpingExtractor] 提取器未激活或WebSocket未就绪');
+        start() {
+            if (this.isActive) {
+                console.log('[DianpingExtractor] 提取器已激活');
                 return;
             }
-            
-            console.log('[DianpingExtractor] 开始提取数据...');
-            
-            const extractedData = {
-                url: window.location.href,
-                pageType: this.detectPageType(),
-                timestamp: new Date().toISOString(),
-                data: {}
-            };
-            
-            try {
-                // 根据页面类型提取不同数据
-                switch (extractedData.pageType) {
-                    case 'restaurant_list':
-                        extractedData.data = this.extractRestaurantList();
-                        break;
-                    case 'restaurant_detail':
-                        extractedData.data = this.extractRestaurantDetail();
-                        break;
-                    case 'reviews':
-                        extractedData.data = this.extractReviews();
-                        break;
-                    default:
-                        extractedData.data = this.extractGenericData();
-                }
-                
-                // 检查是否有新数据
-                const dataHash = this.hashData(extractedData.data);
-                if (!this.extractedData.has(dataHash)) {
-                    this.extractedData.add(dataHash);
-                    
-                    // 发送数据到后端
-                    this.websocketManager.sendDianpingData(extractedData);
-                    
-                    console.log('[DianpingExtractor] 数据提取完成:', extractedData);
-                } else {
-                    console.log('[DianpingExtractor] 数据未变化，跳过发送');
-                }
-                
-            } catch (error) {
-                console.error('[DianpingExtractor] 数据提取失败:', error);
-            }
-        }
-        
-        /**
-         * 检测页面类型
-         */
-        detectPageType() {
-            const url = window.location.href;
-            const pathname = window.location.pathname;
-            
-            if (url.includes('shop') && url.includes('list')) {
-                return 'restaurant_list';
-            } else if (pathname.includes('/shop/')) {
-                return 'restaurant_detail';
-            } else if (url.includes('review') || url.includes('comment')) {
-                return 'reviews';
+            this.isActive = true;
+            console.log('[DianpingExtractor] 开始数据提取');
+
+            this.extractedData.clear();
+
+            if (this.detectPageType() === 'chat_page') {
+                console.log('[DianpingExtractor] 聊天页面 - 启动轮询模式');
+                if (this.pollingInterval) clearInterval(this.pollingInterval);
+                this.pollingInterval = setInterval(() => this.extractData(), 2000);
             } else {
-                return 'unknown';
+                console.log('[DianpingExtractor] 普通页面 - 启动DOM监听模式');
+                this.startObserving();
             }
         }
-        
-        /**
-         * 提取餐厅列表数据
-         */
-        extractRestaurantList() {
-            const restaurants = [];
-            const restaurantElements = document.querySelectorAll(this.selectors.restaurantList);
-            
-            restaurantElements.forEach((element, index) => {
-                try {
-                    const restaurant = {
-                        id: `restaurant_${index}`,
-                        name: this.extractText(element, this.selectors.restaurantItem.name),
-                        rating: this.extractText(element, this.selectors.restaurantItem.rating),
-                        address: this.extractText(element, this.selectors.restaurantItem.address),
-                        price: this.extractText(element, this.selectors.restaurantItem.price),
-                        category: this.extractText(element, this.selectors.restaurantItem.category),
-                        distance: this.extractText(element, this.selectors.restaurantItem.distance),
-                        image: this.extractImage(element, this.selectors.restaurantItem.image),
-                        link: this.extractLink(element)
-                    };
-                    
-                    // 只添加有名称的餐厅
-                    if (restaurant.name) {
-                        restaurants.push(restaurant);
-                    }
-                } catch (error) {
-                    console.warn('[DianpingExtractor] 餐厅数据提取失败:', error);
-                }
-            });
-            
-            return { restaurants, count: restaurants.length };
-        }
-        
-        /**
-         * 提取餐厅详情数据
-         */
-        extractRestaurantDetail() {
-            const detail = {
-                name: this.extractText(document, this.selectors.restaurantDetail.name),
-                rating: this.extractText(document, this.selectors.restaurantDetail.rating),
-                address: this.extractText(document, this.selectors.restaurantDetail.address),
-                phone: this.extractText(document, this.selectors.restaurantDetail.phone),
-                hours: this.extractText(document, this.selectors.restaurantDetail.hours),
-                tags: this.extractTextArray(document, this.selectors.restaurantDetail.tags)
-            };
-            
-            return { restaurant_detail: detail };
-        }
-        
-        /**
-         * 提取评论数据
-         */
-        extractReviews() {
-            const reviews = [];
-            const reviewElements = document.querySelectorAll(this.selectors.reviewList);
-            
-            reviewElements.forEach((element, index) => {
-                try {
-                    const review = {
-                        id: `review_${index}`,
-                        user: this.extractText(element, this.selectors.reviewItem.user),
-                        rating: this.extractText(element, this.selectors.reviewItem.rating),
-                        content: this.extractText(element, this.selectors.reviewItem.content),
-                        date: this.extractText(element, this.selectors.reviewItem.date),
-                        useful: this.extractText(element, this.selectors.reviewItem.useful)
-                    };
-                    
-                    if (review.content) {
-                        reviews.push(review);
-                    }
-                } catch (error) {
-                    console.warn('[DianpingExtractor] 评论数据提取失败:', error);
-                }
-            });
-            
-            return { reviews, count: reviews.length };
-        }
-        
-        /**
-         * 提取通用数据
-         */
-        extractGenericData() {
-            return {
-                title: document.title,
-                meta: {
-                    description: document.querySelector('meta[name="description"]')?.content,
-                    keywords: document.querySelector('meta[name="keywords"]')?.content
-                },
-                elementCount: document.querySelectorAll('*').length,
-                textLength: document.body.innerText.length
-            };
-        }
-        
-        /**
-         * 从元素中提取文本
-         */
-        extractText(parent, selector) {
-            try {
-                const element = parent.querySelector(selector);
-                return element ? element.textContent.trim() : '';
-            } catch (error) {
-                return '';
-            }
-        }
-        
-        /**
-         * 从元素中提取文本数组
-         */
-        extractTextArray(parent, selector) {
-            try {
-                const elements = parent.querySelectorAll(selector);
-                return Array.from(elements).map(el => el.textContent.trim()).filter(text => text);
-            } catch (error) {
-                return [];
-            }
-        }
-        
-        /**
-         * 提取图片URL
-         */
-        extractImage(parent, selector) {
-            try {
-                const img = parent.querySelector(selector);
-                return img ? (img.src || img.dataset.src || '') : '';
-            } catch (error) {
-                return '';
-            }
-        }
-        
-        /**
-         * 提取链接
-         */
-        extractLink(element) {
-            try {
-                const link = element.querySelector('a') || element.closest('a');
-                return link ? link.href : '';
-            } catch (error) {
-                return '';
-            }
-        }
-        
-        /**
-         * 计算数据哈希值
-         */
-        hashData(data) {
-            return JSON.stringify(data).length + '_' + Object.keys(data).join('_');
-        }
-        
-        /**
-         * 停止监听
-         */
+
         stop() {
+            if (!this.isActive) return;
+            this.isActive = false;
+
+            if (this.pollingInterval) {
+                clearInterval(this.pollingInterval);
+                this.pollingInterval = null;
+            }
+
             if (this.observer) {
                 this.observer.disconnect();
                 this.observer = null;
             }
-            this.isActive = false;
-            console.log('[DianpingExtractor] 数据提取器已停止');
+            console.log('[DianpingExtractor] 数据提取已停止');
+        }
+
+        sendDataToBackground(data) {
+            try {
+                chrome.runtime.sendMessage({
+                    type: 'extractedData',
+                    data: data.payload.data
+                });
+            } catch (error) {
+                console.error('[DianpingExtractor] 发送消息错误:', error);
+            }
+        }
+        
+        startObserving() {
+            this.observer = new MutationObserver(() => {
+                this.extractData();
+            });
+            this.observer.observe(document.body, { childList: true, subtree: true });
+        }
+
+        extractData() {
+            if (!this.isActive) return;
+            
+            const pageType = this.detectPageType();
+            
+            if (pageType === 'chat_page') {
+                const allExtractedData = [];
+
+                const { messages } = this.extractChatMessages();
+                if (messages.length > 0) {
+                    allExtractedData.push(...messages);
+                }
+
+                const { tuanInfo } = this.extractTuanInfo();
+                if (tuanInfo.length > 0) {
+                    allExtractedData.push(...tuanInfo);
+                }
+
+                if (allExtractedData.length > 0) {
+                    this.sendDataToBackground({
+                        type: 'dianping_data',
+                        payload: {
+                            pageType,
+                            data: allExtractedData
+                        }
+                    });
+                }
+            }
+        }
+        
+        detectPageType() {
+            const url = window.location.href;
+            if (url.includes('dzim-main-pc') || document.querySelector('wujie-app')) {
+                return 'chat_page';
+            }
+            if (document.querySelector('.message-list') || document.querySelector('.text-message')) {
+                return 'chat_page';
+            }
+            return 'unknown';
+        }
+
+        findAllElements(selector, root) {
+            let elements = [];
+            try {
+                Array.prototype.push.apply(elements, root.querySelectorAll(selector));
+                const descendants = root.querySelectorAll('*');
+                for (const el of descendants) {
+                    if (el.shadowRoot) {
+                        const nestedElements = this.findAllElements(selector, el.shadowRoot);
+                        Array.prototype.push.apply(elements, nestedElements);
+                    }
+                }
+            } catch (e) {
+                // 忽略错误
+            }
+            return elements;
+        }
+
+        extractChatMessages() {
+            const messages = [];
+            const messageNodes = this.findAllElements(this.selectors.chatMessageList, document);
+
+            messageNodes.forEach((node, index) => {
+                const content = (node.innerText || node.textContent).trim();
+                
+                let messageType = '';
+                let prefix = '';
+                if (node.className.includes('shop-text')) {
+                    messageType = 'shop';
+                    prefix = '[商家] ';
+                } else if (node.className.includes('normal-text')) {
+                    messageType = 'customer';
+                    prefix = '[客户] ';
+                } else {
+                    messageType = 'unknown';
+                    prefix = '[未知] ';
+                }
+                
+                const prefixedContent = prefix + content;
+                const uniqueKey = `${node.tagName}_${prefixedContent.slice(0, 50)}`;
+
+                if (content && !this.extractedData.has(uniqueKey)) {
+                    messages.push({
+                        id: `msg_${Date.now()}_${index}`,
+                        type: 'chat_message',
+                        messageType: messageType,
+                        content: prefixedContent,
+                        originalContent: content,
+                    });
+                    this.extractedData.add(uniqueKey);
+                }
+            });
+            
+            if(messages.length > 0) {
+                console.log(`[DianpingExtractor] 提取 ${messages.length} 条新消息`);
+            }
+
+            return { messages, count: messages.length };
+        }
+
+        extractTuanInfo() {
+            const tuanInfoList = [];
+            const tuanNodes = this.findAllElements(this.selectors.tuanInfo, document);
+
+            tuanNodes.forEach((node, index) => {
+                try {
+                    const nameNode = node.querySelector('.tuan-name');
+                    const salePriceNode = node.querySelector('.sale-price');
+                    const originalPriceNode = node.querySelector('.tuan-price .gray-price > span, .tuan-price > .gray > .gray-price:not(.left-dis)');
+                    const imageNode = node.querySelector('.tuan-img img');
+
+                    const name = nameNode ? nameNode.innerText.trim() : '';
+                    const salePrice = salePriceNode ? salePriceNode.innerText.trim() : '';
+                    
+                    const uniqueKey = `tuan_${name}_${salePrice}`;
+
+                    if (name && salePrice && !this.extractedData.has(uniqueKey)) {
+                        const originalPrice = originalPriceNode ? originalPriceNode.innerText.trim() : '';
+                        const image = imageNode ? imageNode.src : '';
+
+                        tuanInfoList.push({
+                            id: `tuan_${Date.now()}_${index}`,
+                            type: 'tuan_info',
+                            content: {
+                                name,
+                                salePrice,
+                                originalPrice,
+                                image,
+                            }
+                        });
+                        this.extractedData.add(uniqueKey);
+                    }
+                } catch (error) {
+                    console.error('[DianpingExtractor] 提取团购信息错误:', error);
+                }
+            });
+            
+            if(tuanInfoList.length > 0) {
+                console.log(`[DianpingExtractor] 提取 ${tuanInfoList.length} 条团购信息`);
+            }
+
+            return { tuanInfo: tuanInfoList, count: tuanInfoList.length };
+        }
+        
+        startClickContacts(count = 10, interval = 2000) {
+            if (this.isClickingContacts) {
+                console.log('[DianpingExtractor] 批量提取已在进行中');
+                return;
+            }
+            
+            this.isClickingContacts = true;
+            this.clickCount = 0;
+            this.totalClicks = count;
+            this.clickInterval = interval;
+
+            // 动态调整内部延迟时间
+            this.pageLoadWaitTime = Math.min(1500, interval * 0.6);
+            this.extractionWaitTime = Math.min(2500, interval * 0.8);
+            
+            console.log(`[DianpingExtractor] 开始批量提取，总数: ${count}, 间隔: ${interval}ms`);
+            this.sendProgressUpdate();
+            this.clickNextContact();
+        }
+        
+        stopClickContacts() {
+            if (!this.isClickingContacts) return;
+            
+            this.isClickingContacts = false;
+            if (this.clickTimeout) {
+                clearTimeout(this.clickTimeout);
+                this.clickTimeout = null;
+            }
+            
+            console.log('[DianpingExtractor] 批量提取已停止');
+        }
+        
+        clickNextContact() {
+            if (!this.isClickingContacts || this.clickCount >= this.totalClicks) {
+                this.isClickingContacts = false;
+                console.log('[DianpingExtractor] 批量提取完成');
+                this.sendProgressUpdate();
+                return;
+            }
+            
+            try {
+                const contactElements = this.findAllElements(this.selectors.contactItems, document);
+                
+                if (contactElements.length === 0) {
+                    this.sendErrorMessage('未找到联系人元素');
+                    return;
+                }
+                
+                const targetContact = contactElements[this.clickCount];
+                if (!targetContact) {
+                    this.sendErrorMessage(`联系人 ${this.clickCount + 1} 不存在`);
+                    return;
+                }
+                
+                const contactInfo = this.getContactInfo(targetContact);
+                console.log(`[DianpingExtractor] 点击第 ${this.clickCount + 1} 个联系人: ${contactInfo.name}`);
+                
+                targetContact.click();
+                
+                this.clickCount++;
+                this.sendProgressUpdate(`正在处理联系人: ${contactInfo.name}`);
+                
+                setTimeout(() => {
+                    this.extractCurrentContactData(contactInfo);
+                }, this.pageLoadWaitTime);
+                
+            } catch (error) {
+                console.error('[DianpingExtractor] 点击联系人错误:', error);
+                this.sendErrorMessage(`点击错误: ${error.message}`);
+            }
+        }
+        
+        getContactInfo(contactElement) {
+            let name = '未知联系人';
+            try {
+                const nameElement = contactElement.querySelector('.userinfo-username');
+                if (nameElement) {
+                    name = nameElement.textContent.trim();
+                }
+            } catch (error) {
+                console.error('[DianpingExtractor] 获取联系人信息错误:', error);
+            }
+            
+            return {
+                name: name,
+                chatId: contactElement.getAttribute('data-chatid') || contactElement.id || '',
+                timestamp: Date.now()
+            };
+        }
+        
+        extractCurrentContactData(contactInfo) {
+            if (!this.isClickingContacts) return;
+            
+            console.log(`[DianpingExtractor] 开始提取联系人 ${contactInfo.name} 的数据`);
+            
+            try {
+                const allExtractedData = [];
+                
+                const { messages } = this.extractChatMessages();
+                if (messages.length > 0) {
+                    const messagesWithContact = messages.map(msg => ({
+                        ...msg,
+                        contactInfo: contactInfo,
+                        contactName: contactInfo.name,
+                        contactChatId: contactInfo.chatId
+                    }));
+                    allExtractedData.push(...messagesWithContact);
+                }
+                
+                const { tuanInfo } = this.extractTuanInfo();
+                if (tuanInfo.length > 0) {
+                    const tuanWithContact = tuanInfo.map(tuan => ({
+                        ...tuan,
+                        contactInfo: contactInfo,
+                        contactName: contactInfo.name,
+                        contactChatId: contactInfo.chatId
+                    }));
+                    allExtractedData.push(...tuanWithContact);
+                }
+                
+                if (allExtractedData.length > 0) {
+                    this.sendDataToBackground({
+                        type: 'dianping_contact_data',
+                        payload: {
+                            pageType: 'chat_page',
+                            contactInfo: contactInfo,
+                            data: allExtractedData
+                        }
+                    });
+                    console.log(`[DianpingExtractor] 已提取联系人 ${contactInfo.name} 的 ${allExtractedData.length} 条数据`);
+                } else {
+                    console.log(`[DianpingExtractor] 联系人 ${contactInfo.name} 暂无新数据`);
+                }
+                
+            } catch (error) {
+                console.error('[DianpingExtractor] 提取联系人数据错误:', error);
+            }
+            
+            setTimeout(() => {
+                this.proceedToNextContact();
+            }, this.extractionWaitTime);
+        }
+        
+        proceedToNextContact() {
+            if (!this.isClickingContacts) return;
+            
+            if (this.clickCount < this.totalClicks) {
+                this.clickTimeout = setTimeout(() => this.clickNextContact(), this.clickInterval);
+            } else {
+                this.isClickingContacts = false;
+                this.sendProgressUpdate('所有联系人处理完成');
+            }
+        }
+        
+        sendProgressUpdate(status = '') {
+            try {
+                chrome.runtime.sendMessage({
+                    type: 'clickProgress',
+                    current: this.clickCount,
+                    total: this.totalClicks,
+                    status: status
+                });
+            } catch (error) {
+                console.error('[DianpingExtractor] 发送进度更新错误:', error);
+            }
+        }
+        
+        sendErrorMessage(message) {
+            this.isClickingContacts = false;
+            if (this.clickTimeout) {
+                clearTimeout(this.clickTimeout);
+                this.clickTimeout = null;
+            }
+            
+            try {
+                chrome.runtime.sendMessage({
+                    type: 'clickError',
+                    message: message
+                });
+            } catch (error) {
+                console.error('[DianpingExtractor] 发送错误消息错误:', error);
+            }
         }
     }
     
-    // 创建数据提取器实例
-    const extractor = new DianpingDataExtractor();
-    
-    // 页面卸载时清理
-    window.addEventListener('beforeunload', () => {
-        extractor.stop();
-    });
-    
-    // 导出到全局作用域
-    window.DianpingDataExtractor = extractor;
-    
+    if (!window.dianpingExtractor) {
+        window.dianpingExtractor = new DianpingDataExtractor();
+    }
 })();

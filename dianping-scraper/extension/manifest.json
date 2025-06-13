@@ -1,62 +1,43 @@
 {
-  "manifest_version": 3,
-  "name": "大众点评数据提取器",
-  "version": "1.0.0",
-  "description": "基于WebSocket通信的大众点评网页数据提取工具",
-  
-  "permissions": [
-    "activeTab",
-    "storage",
-    "tabs",
-    "notifications"
-  ],
-  
-  "host_permissions": [
-    "https://g.dianping.com/*",
-    "https://www.dianping.com/*",
-    "https://*.dianping.com/*"
-  ],
-  
-  "background": {
-    "service_worker": "background.js"
-  },
-  
-  "content_scripts": [
-    {
-      "matches": [
-        "https://g.dianping.com/*",
-        "https://www.dianping.com/*",
-        "https://*.dianping.com/*"
-      ],
-      "js": [
-        "content.js"
-      ],
-      "run_at": "document_end"
-    }
-  ],
-  
-  "action": {
-    "default_popup": "popup.html",
-    "default_title": "大众点评数据提取器",
-    "default_icon": {
-      "16": "icons/icon16.png",
-      "32": "icons/icon32.png",
-      "48": "icons/icon48.png",
-      "128": "icons/icon128.png"
-    }
-  },
-  
-  "icons": {
-    "16": "icons/icon16.png",
-    "32": "icons/icon32.png",
-    "48": "icons/icon48.png",
-    "128": "icons/icon128.png"
-  },
-  
-  "web_accessible_resources": [
-    {
-      "resources": ["websocket.js"],
-      "matches": ["https://*.dianping.com/*"]
-    }
-  ]
+    "manifest_version": 3,
+    "name": "大众点评数据提取器",
+    "description": "从大众点评网站提取数据并发送到本地服务器",
+    "version": "1.0.0",
+    "background": {
+        "service_worker": "background.js"
+    },
+    "permissions": [
+        "storage",
+        "activeTab",
+        "tabs",
+        "notifications"
+    ],
+    "action": {
+        "default_popup": "popup.html",
+        "default_icon": {
+            "16": "icons/icon16.png",
+            "48": "icons/icon48.png",
+            "128": "icons/icon128.png"
+        }
+    },
+    "icons": {
+        "16": "icons/icon16.png",
+        "48": "icons/icon48.png",
+        "128": "icons/icon128.png"
+    },
+    "content_scripts": [
+        {
+            "matches": ["*://*.dianping.com/*"],
+            "js": ["content.js"],
+            "css": ["popup.css"],
+            "all_frames": true,
+            "run_at": "document_end"
+        }
+    ],
+    "web_accessible_resources": [
+        {
+            "resources": ["icons/*.png", "data.html", "injector.js"],
+            "matches": ["*://*.dianping.com/*"]
+        }
+    ]
 } 

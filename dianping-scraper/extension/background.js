@@ -1,336 +1,205 @@
 /**
- * 大众点评数据提取器 - Background Script
- * 处理扩展的后台逻辑、消息传递和事件管理
+ * WebSocket通信管理器 - 后台脚本
+ * 精简版 - 负责与Python后端的核心连接和数据传输
  */
+let websocket = null;
+const wsUrl = 'ws://localhost:8765';
+let tabExtractionStatus = {}; // { tabId: boolean }
 
-console.log('[Background] 大众点评数据提取器后台脚本启动');
+function connectWebSocket() {
+    if (websocket && websocket.readyState === WebSocket.OPEN) {
+        console.log('[Background] WebSocket已连接');
+        return;
+    }
+    
+    if (websocket && websocket.readyState === WebSocket.CONNECTING) {
+        console.log('[Background] WebSocket连接中');
+        return;
+    }
 
-class ExtensionBackgroundManager {
-    constructor() {
-        this.activeConnections = new Map();
-        this.extensionState = {
-            isActive: true,
-            lastActivity: Date.now(),
-            dataCollected: 0,
-            errors: 0
-        };
-        
-        this.init();
-    }
-    
-    /**
-     * 初始化后台管理器
-     */
-    init() {
-        console.log('[Background] 初始化后台管理器...');
-        
-        // 监听扩展安装事件
-        chrome.runtime.onInstalled.addListener(this.handleInstalled.bind(this));
-        
-        // 监听标签页更新事件
-        chrome.tabs.onUpdated.addListener(this.handleTabUpdated.bind(this));
-        
-        // 监听来自content script的消息
-        chrome.runtime.onMessage.addListener(this.handleMessage.bind(this));
-        
-        // 监听扩展图标点击
-        chrome.action.onClicked.addListener(this.handleActionClicked.bind(this));
-        
-        // 定期检查状态
-        this.startStatusCheck();
-    }
-    
-    /**
-     * 处理扩展安装
-     */
-    handleInstalled(details) {
-        console.log('[Background] 扩展安装/更新:', details.reason);
-        
-        if (details.reason === 'install') {
-            console.log('[Background] 首次安装，设置默认配置');
-            this.setDefaultSettings();
-            this.showWelcomeNotification();
-        } else if (details.reason === 'update') {
-            console.log('[Background] 扩展更新完成');
-        }
-    }
-    
-    /**
-     * 设置默认配置
-     */
-    setDefaultSettings() {
-        const defaultSettings = {
-            autoExtract: true,
-            websocketUrl: 'ws://localhost:8765',
-            extractionDelay: 2000,
-            maxRetries: 3,
-            debugMode: false
-        };
-        
-        chrome.storage.sync.set(defaultSettings, () => {
-            console.log('[Background] 默认设置已保存');
-        });
-    }
-    
-    /**
-     * 显示欢迎通知
-     */
-    showWelcomeNotification() {
-        // 检查notifications API是否可用
-        if (chrome.notifications && chrome.notifications.create) {
-            chrome.notifications.create({
-                type: 'basic',
-                iconUrl: 'icons/icon48.png',
-                title: '大众点评数据提取器',
-                message: '扩展安装成功！请访问大众点评网站开始数据提取。'
-            }, (notificationId) => {
-                if (chrome.runtime.lastError) {
-                    console.warn('[Background] 通知创建失败:', chrome.runtime.lastError.message);
-                } else {
-                    console.log('[Background] 欢迎通知已显示:', notificationId);
-                }
-            });
-        } else {
-            console.warn('[Background] 通知API不可用，跳过欢迎通知');
-        }
-    }
-    
-    /**
-     * 处理标签页更新
-     */
-    handleTabUpdated(tabId, changeInfo, tab) {
-        // 只处理大众点评网站的标签页
-        if (changeInfo.status === 'complete' && tab.url && this.isDianpingUrl(tab.url)) {
-            console.log('[Background] 检测到大众点评页面:', tab.url);
-            
-            // 更新扩展图标状态
-            this.updateBadge(tabId, 'active');
-            
-            // 向content script发送激活消息
-            this.sendMessageToTab(tabId, {
-                type: 'activate_extraction',
-                url: tab.url,
-                timestamp: new Date().toISOString()
-            });
-        }
-    }
-    
-    /**
-     * 检查是否是大众点评URL
-     */
-    isDianpingUrl(url) {
-        return url.includes('dianping.com');
-    }
-    
-    /**
-     * 处理来自content script的消息
-     */
-    handleMessage(message, sender, sendResponse) {
-        console.log('[Background] 收到消息:', message.type, 'from tab:', sender.tab?.id);
-        
-        switch (message.type) {
-            case 'data_extracted':
-                this.handleDataExtracted(message.data, sender);
-                break;
-                
-            case 'extraction_error':
-                this.handleExtractionError(message.error, sender);
-                break;
-                
-            case 'websocket_status':
-                this.handleWebSocketStatus(message.status, sender);
-                break;
-                
-            case 'get_settings':
-                this.getSettings(sendResponse);
-                return true; // 保持消息通道开放
-                
-            case 'update_settings':
-                this.updateSettings(message.settings, sendResponse);
-                return true;
-                
-            default:
-                console.warn('[Background] 未知消息类型:', message.type);
-        }
-    }
-    
-    /**
-     * 处理数据提取完成
-     */
-    handleDataExtracted(data, sender) {
-        this.extensionState.dataCollected++;
-        this.extensionState.lastActivity = Date.now();
-        
-        console.log('[Background] 数据提取完成:', data);
-        
-        // 更新徽章显示数据收集数量
-        if (sender.tab) {
-            this.updateBadge(sender.tab.id, this.extensionState.dataCollected.toString());
-        }
-        
-        // 保存到本地存储
-        this.saveExtractedData(data, sender.tab?.url);
-    }
-    
-    /**
-     * 处理提取错误
-     */
-    handleExtractionError(error, sender) {
-        this.extensionState.errors++;
-        console.error('[Background] 提取错误:', error);
-        
-        // 更新徽章显示错误状态
-        if (sender.tab) {
-            this.updateBadge(sender.tab.id, '!', '#ff0000');
-        }
-    }
-    
-    /**
-     * 处理WebSocket状态变化
-     */
-    handleWebSocketStatus(status, sender) {
-        console.log('[Background] WebSocket状态:', status);
-        
-        if (sender.tab) {
-            const badgeColor = status.connected ? '#00ff00' : '#ff9900';
-            const badgeText = status.connected ? '●' : '○';
-            this.updateBadge(sender.tab.id, badgeText, badgeColor);
-        }
-    }
-    
-    /**
-     * 获取设置
-     */
-    getSettings(sendResponse) {
-        chrome.storage.sync.get(null, (settings) => {
-            sendResponse(settings);
-        });
-    }
-    
-    /**
-     * 更新设置
-     */
-    updateSettings(newSettings, sendResponse) {
-        chrome.storage.sync.set(newSettings, () => {
-            console.log('[Background] 设置已更新:', newSettings);
-            sendResponse({ success: true });
-        });
-    }
-    
-    /**
-     * 保存提取的数据
-     */
-    saveExtractedData(data, url) {
-        const dataEntry = {
-            data: data,
-            url: url,
-            timestamp: new Date().toISOString(),
-            id: `data_${Date.now()}`
-        };
-        
-        // 获取现有数据
-        chrome.storage.local.get(['extractedData'], (result) => {
-            const existingData = result.extractedData || [];
-            existingData.push(dataEntry);
-            
-            // 限制存储的数据条目数量（最多保留1000条）
-            if (existingData.length > 1000) {
-                existingData.splice(0, existingData.length - 1000);
+    console.log('[Background] 正在连接WebSocket...');
+    websocket = new WebSocket(wsUrl);
+
+    websocket.onopen = () => {
+        console.log('[Background] WebSocket连接已建立');
+    };
+
+    websocket.onmessage = (event) => {
+        console.log('[Background] 收到服务器消息:', event.data);
+        try {
+            const command = JSON.parse(event.data);
+            if (command.type === 'sendAIReply' && command.text) {
+                console.log(`[Background] 收到AI回复指令，准备发送: "${command.text}"`);
+                // Find the active Dianping tab and send the message to it
+                chrome.tabs.query({ active: true, url: "*://*.dianping.com/*" }, (tabs) => {
+                    if (tabs.length > 0) {
+                        const targetTabId = tabs[0].id;
+                        console.log(`[Background] 找到目标Tab ${targetTabId}，正在发送...`);
+                        chrome.tabs.sendMessage(targetTabId, {
+                            type: 'sendAIReply',
+                            text: command.text
+                        }, (response) => {
+                            if (chrome.runtime.lastError) {
+                                console.error('[Background] 发送AI回复失败:', chrome.runtime.lastError.message);
+                            } else {
+                                console.log('[Background] AI回复指令发送成功，前端响应:', response);
+                            }
+                        });
+                    } else {
+                        console.warn('[Background] 未找到活跃的大众点评Tab来发送AI回复。');
+                    }
+                });
             }
-            
-            // 保存到本地存储
-            chrome.storage.local.set({ extractedData: existingData }, () => {
-                console.log('[Background] 数据已保存到本地存储');
-            });
-        });
-    }
-    
-    /**
-     * 更新徽章
-     */
-    updateBadge(tabId, text, color = '#4CAF50') {
-        chrome.action.setBadgeText({
-            text: text,
-            tabId: tabId
-        });
-        
-        chrome.action.setBadgeBackgroundColor({
-            color: color,
-            tabId: tabId
-        });
-    }
-    
-    /**
-     * 向指定标签页发送消息
-     */
-    sendMessageToTab(tabId, message) {
-        chrome.tabs.sendMessage(tabId, message, (response) => {
-            if (chrome.runtime.lastError) {
-                console.warn('[Background] 发送消息失败:', chrome.runtime.lastError.message);
-            }
-        });
-    }
-    
-    /**
-     * 处理扩展图标点击
-     */
-    handleActionClicked(tab) {
-        console.log('[Background] 扩展图标被点击, 标签页:', tab.url);
-        
-        if (this.isDianpingUrl(tab.url)) {
-            // 在大众点评页面，切换提取状态
-            this.toggleExtraction(tab.id);
-        } else {
-            // 在其他页面，打开大众点评
-            chrome.tabs.create({
-                url: 'https://g.dianping.com/dzim-main-pc/index.html#/'
-            });
+        } catch (error) {
+            console.warn('[Background]收到的服务器消息不是一个有效的JSON指令。', error);
         }
-    }
-    
-    /**
-     * 切换数据提取状态
-     */
-    toggleExtraction(tabId) {
-        this.extensionState.isActive = !this.extensionState.isActive;
-        
-        this.sendMessageToTab(tabId, {
-            type: 'toggle_extraction',
-            active: this.extensionState.isActive,
-            timestamp: new Date().toISOString()
-        });
-        
-        // 更新徽章
-        const badgeText = this.extensionState.isActive ? '●' : '○';
-        const badgeColor = this.extensionState.isActive ? '#4CAF50' : '#9E9E9E';
-        this.updateBadge(tabId, badgeText, badgeColor);
-    }
-    
-    /**
-     * 开始状态检查
-     */
-    startStatusCheck() {
-        setInterval(() => {
-            console.log('[Background] 扩展状态:', this.extensionState);
-        }, 60000); // 每分钟检查一次
-    }
-    
-    /**
-     * 获取扩展状态
-     */
-    getExtensionState() {
-        return {
-            ...this.extensionState,
-            activeConnections: this.activeConnections.size,
-            uptime: Date.now() - this.extensionState.lastActivity
-        };
+    };
+
+    websocket.onclose = () => {
+        console.log('[Background] WebSocket连接已关闭');
+        websocket = null;
+        setTimeout(connectWebSocket, 5000);
+    };
+
+    websocket.onerror = (error) => {
+        console.error('[Background] WebSocket错误:', error);
+        websocket = null;
+    };
+}
+
+function sendMessageToServer(data) {
+    if (websocket && websocket.readyState === WebSocket.OPEN) {
+        websocket.send(JSON.stringify(data));
+    } else {
+        console.error('[Background] WebSocket未连接，无法发送数据');
     }
 }
 
-// 创建后台管理器实例
-const backgroundManager = new ExtensionBackgroundManager();
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    const tabId = message.tabId || (sender.tab ? sender.tab.id : null);
 
-// 导出到全局作用域供调试使用
-if (typeof globalThis !== 'undefined') {
-    globalThis.backgroundManager = backgroundManager;
-} 
+    switch (message.type) {
+        case 'startExtraction':
+            if (!tabId) {
+                 sendResponse({ status: 'error', message: '无tabId' });
+                 return true;
+            }
+            console.log(`[Background] 开始提取 tab ${tabId}`);
+            if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+                connectWebSocket();
+            }
+            chrome.tabs.sendMessage(tabId, { type: 'startExtraction' }, (response) => {
+                if (chrome.runtime.lastError) {
+                    console.error('[Background] 启动提取错误:', chrome.runtime.lastError.message);
+                    sendResponse({ status: 'error', message: chrome.runtime.lastError.message });
+                } else {
+                    tabExtractionStatus[tabId] = true;
+                    sendResponse({ status: 'started' });
+                }
+            });
+            return true;
+
+        case 'stopExtraction':
+             if (!tabId) {
+                 sendResponse({ status: 'error', message: '无tabId' });
+                 return true;
+            }
+            console.log(`[Background] 停止提取 tab ${tabId}`);
+            chrome.tabs.sendMessage(tabId, { type: 'stopExtraction' }, (response) => {
+                if (chrome.runtime.lastError) {
+                    console.error('[Background] 停止提取错误:', chrome.runtime.lastError.message);
+                    sendResponse({ status: 'error', message: chrome.runtime.lastError.message });
+                } else {
+                    tabExtractionStatus[tabId] = false;
+                    sendResponse({ status: 'stopped' });
+                }
+            });
+            return true;
+
+        case 'extractedData':
+            console.log('[Background] 收到提取数据，发送到服务器');
+            sendMessageToServer(message.data);
+            break;
+
+        case 'startClickContacts':
+            if (!tabId) {
+                sendResponse({ status: 'error', message: '无tabId' });
+                return true;
+            }
+            console.log(`[Background] 开始批量提取 tab ${tabId}, 数量: ${message.count}`);
+            chrome.tabs.sendMessage(tabId, { 
+                type: 'startClickContacts', 
+                count: message.count, 
+                interval: message.interval 
+            }, (response) => {
+                if (chrome.runtime.lastError) {
+                    console.error('[Background] 启动批量提取错误:', chrome.runtime.lastError.message);
+                    sendResponse({ status: 'error', message: chrome.runtime.lastError.message });
+                } else {
+                    sendResponse({ status: 'started' });
+                }
+            });
+            return true;
+
+        case 'stopClickContacts':
+            if (!tabId) {
+                sendResponse({ status: 'error', message: '无tabId' });
+                return true;
+            }
+            console.log(`[Background] 停止批量提取 tab ${tabId}`);
+            chrome.tabs.sendMessage(tabId, { type: 'stopClickContacts' }, (response) => {
+                if (chrome.runtime.lastError) {
+                    console.error('[Background] 停止批量提取错误:', chrome.runtime.lastError.message);
+                    sendResponse({ status: 'error', message: chrome.runtime.lastError.message });
+                } else {
+                    sendResponse({ status: 'stopped' });
+                }
+            });
+            return true;
+
+        case 'testSendMessage':
+            if (!tabId) {
+                sendResponse({ status: 'failed', message: '无tabId' });
+                return true;
+            }
+            console.log(`[Background] 测试发送消息 tab ${tabId}`);
+            chrome.tabs.sendMessage(tabId, { type: 'testSendMessage' }, (response) => {
+                if (chrome.runtime.lastError) {
+                    console.error('[Background] 测试发送错误:', chrome.runtime.lastError.message);
+                    sendResponse({ status: 'failed', message: chrome.runtime.lastError.message });
+                } else if (response && response.status === 'success') {
+                    sendResponse({ status: 'success' });
+                } else {
+                    sendResponse({ status: 'failed', message: response?.message || '未知错误' });
+                }
+            });
+            return true;
+
+        case 'clickProgress':
+        case 'clickError':
+            // 转发进度和错误消息到popup
+            chrome.runtime.sendMessage(message);
+            break;
+
+        case 'getStatus':
+             if (!tabId) {
+                 sendResponse({ isExtracting: false, isConnected: false });
+                 return true;
+            }
+            const isConnected = websocket && websocket.readyState === WebSocket.OPEN;
+            const isExtracting = !!tabExtractionStatus[tabId];
+            sendResponse({ isExtracting: isExtracting, isConnected: isConnected });
+            break;
+            
+        default:
+            console.warn(`[Background] 未知消息类型: ${message.type}`);
+            sendResponse({ status: 'error', message: '未知消息类型' });
+            return false;
+    }
+    return true;
+});
+
+// 扩展启动时初始化连接
+connectWebSocket();
+
+console.log('[Background] 后台脚本已加载');

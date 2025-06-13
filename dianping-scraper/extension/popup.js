@@ -1,440 +1,230 @@
 /**
  * 大众点评数据提取器 - 弹出窗口脚本
- * 处理用户界面交互和状态管理
+ * 精简版 - 只保留核心功能
  */
+document.addEventListener('DOMContentLoaded', () => {
+    const toggleButton = document.getElementById('toggleExtraction');
+    const toggleText = document.getElementById('toggleText');
+    const extractionStatus = document.getElementById('extractionStatus');
+    const websocketStatus = document.getElementById('websocketStatus');
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
 
-class PopupManager {
-    constructor() {
-        this.isActive = false;
-        this.currentTab = null;
-        this.stats = {
-            extracted: 0,
-            errors: 0,
-            uptime: 0
-        };
-        
-        this.init();
-    }
-    
-    /**
-     * 初始化弹出窗口
-     */
-    init() {
-        console.log('[Popup] 初始化弹出窗口...');
-        
-        // 绑定事件监听器
-        this.bindEventListeners();
-        
-        // 获取当前标签页
-        this.getCurrentTab();
-        
-        // 加载状态
-        this.loadStatus();
-        
-        // 定期更新状态
-        this.startStatusUpdate();
-    }
-    
-    /**
-     * 绑定事件监听器
-     */
-    bindEventListeners() {
-        // 控制按钮
-        document.getElementById('toggleExtraction').addEventListener('click', () => {
-            this.toggleExtraction();
-        });
-        
-        document.getElementById('testConnection').addEventListener('click', () => {
-            this.testConnection();
-        });
-        
-        document.getElementById('clearData').addEventListener('click', () => {
-            this.clearData();
-        });
-        
-        // 快速操作
-        document.getElementById('openDianping').addEventListener('click', () => {
-            this.openDianping();
-        });
-        
-        document.getElementById('viewData').addEventListener('click', () => {
-            this.viewData();
-        });
-        
-        document.getElementById('openSettings').addEventListener('click', () => {
-            this.openSettings();
-        });
-    }
-    
-    /**
-     * 获取当前标签页
-     */
-    async getCurrentTab() {
-        try {
-            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-            this.currentTab = tab;
-            
-            // 更新当前页面显示
-            const pageElement = document.getElementById('currentPage');
-            if (tab.url && tab.url.includes('dianping.com')) {
-                pageElement.textContent = '大众点评';
-                pageElement.className = 'value connected';
-            } else {
-                pageElement.textContent = '非大众点评页面';
-                pageElement.className = 'value warning';
-            }
-            
-            // 检查是否在大众点评页面
-            this.checkDianpingPage();
-            
-        } catch (error) {
-            console.error('[Popup] 获取当前标签页失败:', error);
-        }
-    }
-    
-    /**
-     * 检查是否在大众点评页面
-     */
-    checkDianpingPage() {
-        if (this.currentTab && this.currentTab.url && this.currentTab.url.includes('dianping.com')) {
-            // 在大众点评页面，启用相关功能
-            document.getElementById('toggleExtraction').disabled = false;
-            document.getElementById('testConnection').disabled = false;
-        } else {
-            // 不在大众点评页面，禁用部分功能
-            document.getElementById('toggleExtraction').disabled = true;
-            this.updateExtractionStatus('未在大众点评页面', 'warning');
-        }
-    }
-    
-    /**
-     * 加载状态
-     */
-    async loadStatus() {
-        try {
-            // 获取扩展状态
-            const response = await this.sendMessageToBackground({
-                type: 'get_extension_state'
-            });
-            
-            if (response && response.state) {
-                this.updateUIFromState(response.state);
-            }
-            
-            // 获取存储的数据统计
-            this.loadDataStats();
-            
-            // 检查WebSocket连接状态
-            this.checkWebSocketStatus();
-            
-        } catch (error) {
-            console.error('[Popup] 加载状态失败:', error);
-            this.showMessage('加载状态失败', 'error');
-        }
-    }
-    
-    /**
-     * 加载数据统计
-     */
-    async loadDataStats() {
-        try {
-            const result = await chrome.storage.local.get(['extractedData']);
-            const extractedData = result.extractedData || [];
-            
-            // 更新统计显示
-            document.getElementById('extractedCount').textContent = extractedData.length;
-            
-            // 计算错误数（假设有错误记录）
-            // 这里可以根据实际需求添加错误统计逻辑
-            
-        } catch (error) {
-            console.error('[Popup] 加载数据统计失败:', error);
-        }
-    }
-    
-    /**
-     * 检查WebSocket连接状态
-     */
-    async checkWebSocketStatus() {
-        if (!this.currentTab || !this.currentTab.url.includes('dianping.com')) {
-            this.updateWebSocketStatus('未连接', 'error');
-            return;
-        }
-        
-        try {
-            // 向content script请求WebSocket状态
-            const response = await chrome.tabs.sendMessage(this.currentTab.id, {
-                type: 'get_websocket_status'
-            });
-            
-            if (response && response.status) {
-                const { connected } = response.status;
-                this.updateWebSocketStatus(
-                    connected ? '已连接' : '未连接',
-                    connected ? 'connected' : 'error'
-                );
-            } else {
-                this.updateWebSocketStatus('检查中...', 'warning');
-            }
-            
-        } catch (error) {
-            console.warn('[Popup] 检查WebSocket状态失败:', error);
-            this.updateWebSocketStatus('无法检查', 'error');
-        }
-    }
-    
-    /**
-     * 更新WebSocket状态显示
-     */
-    updateWebSocketStatus(text, className) {
-        const statusElement = document.getElementById('websocketStatus');
-        const dotElement = document.getElementById('statusDot');
-        const textElement = document.getElementById('statusText');
-        
-        statusElement.textContent = text;
-        statusElement.className = `value ${className}`;
-        
-        dotElement.className = `status-dot ${className}`;
-        textElement.textContent = text;
-    }
-    
-    /**
-     * 更新提取状态显示
-     */
-    updateExtractionStatus(text, className) {
-        const statusElement = document.getElementById('extractionStatus');
-        statusElement.textContent = text;
-        statusElement.className = `value ${className}`;
-    }
-    
-    /**
-     * 从状态更新UI
-     */
-    updateUIFromState(state) {
-        this.isActive = state.isActive;
-        
-        // 更新切换按钮
-        const toggleBtn = document.getElementById('toggleExtraction');
-        const toggleText = document.getElementById('toggleText');
-        
-        if (this.isActive) {
-            toggleBtn.className = 'btn btn-secondary';
+    // 联系人点击控件
+    const startClickButton = document.getElementById('startClickContacts');
+    const stopClickButton = document.getElementById('stopClickContacts');
+    const clickText = document.getElementById('clickText');
+    const contactCountInput = document.getElementById('contactCount');
+    const clickIntervalSelect = document.getElementById('clickInterval');
+    const clickProgressSpan = document.getElementById('clickProgress');
+
+    // 测试发送按钮
+    const testSendButton = document.getElementById('testSendButton');
+
+    let currentTabId = null;
+    let isExtracting = false;
+    let isClickingContacts = false;
+
+    function updateUI(extracting) {
+        isExtracting = extracting;
+        if (isExtracting) {
+            toggleButton.className = 'btn btn-secondary';
             toggleText.textContent = '停止提取';
-            this.updateExtractionStatus('运行中', 'connected');
+            extractionStatus.textContent = '运行中';
+            extractionStatus.className = 'value connected';
         } else {
-            toggleBtn.className = 'btn btn-primary';
+            toggleButton.className = 'btn btn-primary';
             toggleText.textContent = '启动提取';
-            this.updateExtractionStatus('未激活', 'warning');
-        }
-        
-        // 更新统计信息
-        if (state.dataCollected !== undefined) {
-            document.getElementById('extractedCount').textContent = state.dataCollected;
-        }
-        
-        if (state.errors !== undefined) {
-            document.getElementById('errorCount').textContent = state.errors;
-        }
-        
-        // 更新运行时间
-        if (state.lastActivity) {
-            const uptime = Date.now() - state.lastActivity;
-            this.updateUptimeDisplay(uptime);
+            extractionStatus.textContent = '未激活';
+            extractionStatus.className = 'value warning';
         }
     }
     
-    /**
-     * 更新运行时间显示
-     */
-    updateUptimeDisplay(uptime) {
-        const uptimeElement = document.getElementById('uptimeDisplay');
-        
-        if (uptime < 60000) {
-            uptimeElement.textContent = '< 1分钟';
-        } else if (uptime < 3600000) {
-            const minutes = Math.floor(uptime / 60000);
-            uptimeElement.textContent = `${minutes}分钟`;
+    function updateWebsocketStatusUI(connected) {
+         if (connected) {
+            websocketStatus.textContent = '已连接';
+            websocketStatus.className = 'value connected';
+            statusDot.className = 'status-dot connected';
+            statusText.textContent = '已连接';
         } else {
-            const hours = Math.floor(uptime / 3600000);
-            const minutes = Math.floor((uptime % 3600000) / 60000);
-            uptimeElement.textContent = `${hours}小时${minutes}分钟`;
+            websocketStatus.textContent = '未连接';
+            websocketStatus.className = 'value error';
+            statusDot.className = 'status-dot error';
+            statusText.textContent = '未连接';
         }
     }
-    
-    /**
-     * 切换数据提取状态
-     */
-    async toggleExtraction() {
-        if (!this.currentTab || !this.currentTab.url.includes('dianping.com')) {
-            this.showMessage('请在大众点评页面使用此功能', 'warning');
-            return;
-        }
-        
-        try {
-            const response = await chrome.tabs.sendMessage(this.currentTab.id, {
-                type: 'toggle_extraction',
-                active: !this.isActive
-            });
-            
-            if (response && response.success) {
-                this.isActive = !this.isActive;
-                this.updateUIFromState({ isActive: this.isActive });
-                this.showMessage(
-                    this.isActive ? '数据提取已启动' : '数据提取已停止',
-                    'success'
-                );
-            } else {
-                this.showMessage('操作失败，请重试', 'error');
-            }
-            
-        } catch (error) {
-            console.error('[Popup] 切换提取状态失败:', error);
-            this.showMessage('操作失败', 'error');
+
+    function updateClickUI(clicking) {
+        isClickingContacts = clicking;
+        if (isClickingContacts) {
+            startClickButton.style.display = 'none';
+            stopClickButton.style.display = 'block';
+            contactCountInput.disabled = true;
+            clickIntervalSelect.disabled = true;
+        } else {
+            startClickButton.style.display = 'block';
+            stopClickButton.style.display = 'none';
+            contactCountInput.disabled = false;
+            clickIntervalSelect.disabled = false;
+            clickProgressSpan.textContent = '已停止';
+            clickProgressSpan.className = 'value warning';
         }
     }
-    
-    /**
-     * 测试连接
-     */
-    async testConnection() {
-        if (!this.currentTab || !this.currentTab.url.includes('dianping.com')) {
-            this.showMessage('请在大众点评页面测试连接', 'warning');
-            return;
-        }
-        
-        try {
-            this.showMessage('正在测试连接...', 'warning');
-            
-            const response = await chrome.tabs.sendMessage(this.currentTab.id, {
-                type: 'test_websocket_connection'
-            });
-            
-            if (response && response.success) {
-                this.showMessage('连接测试成功！', 'success');
-                this.updateWebSocketStatus('已连接', 'connected');
-            } else {
-                this.showMessage('连接测试失败', 'error');
-                this.updateWebSocketStatus('连接失败', 'error');
-            }
-            
-        } catch (error) {
-            console.error('[Popup] 测试连接失败:', error);
-            this.showMessage('连接测试失败', 'error');
-        }
-    }
-    
-    /**
-     * 清除数据
-     */
-    async clearData() {
-        if (!confirm('确定要清除所有提取的数据吗？此操作不可撤销。')) {
-            return;
-        }
-        
-        try {
-            await chrome.storage.local.remove(['extractedData']);
-            document.getElementById('extractedCount').textContent = '0';
-            this.showMessage('数据已清除', 'success');
-            
-        } catch (error) {
-            console.error('[Popup] 清除数据失败:', error);
-            this.showMessage('清除数据失败', 'error');
-        }
-    }
-    
-    /**
-     * 打开大众点评
-     */
-    openDianping() {
-        chrome.tabs.create({
-            url: 'https://g.dianping.com/dzim-main-pc/index.html#/'
-        });
-        window.close();
-    }
-    
-    /**
-     * 查看数据
-     */
-    async viewData() {
-        try {
-            const result = await chrome.storage.local.get(['extractedData']);
-            const extractedData = result.extractedData || [];
-            
-            if (extractedData.length === 0) {
-                this.showMessage('暂无数据', 'warning');
-                return;
-            }
-            
-            // 创建数据查看页面
-            const dataUrl = chrome.runtime.getURL('data.html');
-            chrome.tabs.create({ url: dataUrl });
-            window.close();
-            
-        } catch (error) {
-            console.error('[Popup] 查看数据失败:', error);
-            this.showMessage('查看数据失败', 'error');
-        }
-    }
-    
-    /**
-     * 打开设置
-     */
-    openSettings() {
-        const settingsUrl = chrome.runtime.getURL('settings.html');
-        chrome.tabs.create({ url: settingsUrl });
-        window.close();
-    }
-    
-    /**
-     * 发送消息到后台脚本
-     */
-    async sendMessageToBackground(message) {
-        return new Promise((resolve, reject) => {
-            chrome.runtime.sendMessage(message, (response) => {
-                if (chrome.runtime.lastError) {
-                    reject(chrome.runtime.lastError);
-                } else {
-                    resolve(response);
-                }
-            });
-        });
-    }
-    
-    /**
-     * 显示消息
-     */
-    showMessage(text, type = 'success') {
-        const messageElement = document.getElementById('message');
-        const messageTextElement = document.getElementById('messageText');
-        
-        messageTextElement.textContent = text;
-        messageElement.className = `message ${type}`;
-        messageElement.style.display = 'block';
-        
-        // 3秒后自动隐藏
+
+    function showMessage(text, type = 'success') {
+        const messageDiv = document.getElementById('message');
+        const messageText = document.getElementById('messageText');
+        messageText.textContent = text;
+        messageDiv.className = `message ${type}`;
+        messageDiv.style.display = 'block';
         setTimeout(() => {
-            messageElement.style.display = 'none';
+            messageDiv.style.display = 'none';
         }, 3000);
     }
-    
-    /**
-     * 开始状态更新
-     */
-    startStatusUpdate() {
-        // 每5秒更新一次状态
-        setInterval(() => {
-            this.loadStatus();
-        }, 5000);
-        
-        // 更新最后更新时间
-        setInterval(() => {
-            document.getElementById('lastUpdate').textContent = 
-                new Date().toLocaleTimeString();
-        }, 1000);
-    }
-}
 
-// 等待DOM加载完成后初始化
-document.addEventListener('DOMContentLoaded', () => {
-    new PopupManager();
+    // 获取当前标签页并检查状态
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const tab = tabs[0];
+        if (!tab) return;
+        currentTabId = tab.id;
+        
+        const pageElement = document.getElementById('currentPage');
+        if (!tab.url || !tab.url.includes('dianping.com')) {
+            toggleButton.disabled = true;
+            extractionStatus.textContent = '非大众点评页';
+            pageElement.textContent = '非大众点评页面';
+            pageElement.className = 'value warning';
+            updateUI(false);
+        } else {
+            pageElement.textContent = '大众点评';
+            pageElement.className = 'value connected';
+        }
+
+        // 获取初始状态
+        chrome.runtime.sendMessage({ type: 'getStatus', tabId: currentTabId }, (response) => {
+            if (chrome.runtime.lastError) {
+                console.error("获取状态错误:", chrome.runtime.lastError.message);
+                updateUI(false);
+                updateWebsocketStatusUI(false);
+            } else if (response) {
+                updateUI(response.isExtracting);
+                updateWebsocketStatusUI(response.isConnected);
+            } else {
+                updateUI(false);
+                updateWebsocketStatusUI(false);
+            }
+        });
+    });
+
+    // 切换提取状态
+    toggleButton.addEventListener('click', () => {
+        if (!currentTabId || toggleButton.disabled) return;
+
+        const messageType = isExtracting ? 'stopExtraction' : 'startExtraction';
+        chrome.runtime.sendMessage({ type: messageType, tabId: currentTabId }, (response) => {
+            if (chrome.runtime.lastError) {
+                console.error(messageType + " 错误:", chrome.runtime.lastError.message);
+            } else if (response && (response.status === 'started' || response.status === 'stopped')) {
+                updateUI(!isExtracting);
+            }
+        });
+    });
+
+    // 开始点击联系人
+    startClickButton.addEventListener('click', () => {
+        if (!currentTabId || startClickButton.disabled) return;
+
+        const count = parseInt(contactCountInput.value) || 10;
+        const interval = parseInt(clickIntervalSelect.value) || 2000;
+
+        if (count < 1 || count > 50) {
+            showMessage('请输入1-50之间的联系人数量', 'error');
+            return;
+        }
+
+        // 显示当前模式
+        let speedMode = interval <= 1000 ? '中速' : (interval <= 2000 ? '标准' : '慢速');
+
+        chrome.runtime.sendMessage({
+            type: 'startClickContacts',
+            tabId: currentTabId,
+            count: count,
+            interval: interval
+        }, (response) => {
+            if (chrome.runtime.lastError) {
+                console.error("启动批量数据提取错误:", chrome.runtime.lastError.message);
+                showMessage('启动失败', 'error');
+            } else if (response && response.status === 'started') {
+                updateClickUI(true);
+                clickProgressSpan.textContent = `0/${count} - 准备开始(${speedMode})`;
+                clickProgressSpan.className = 'value connected';
+                showMessage(`开始批量提取${count}个联系人的数据 (${speedMode})`, 'success');
+            }
+        });
+    });
+
+    // 停止点击联系人
+    stopClickButton.addEventListener('click', () => {
+        if (!currentTabId) return;
+
+        chrome.runtime.sendMessage({
+            type: 'stopClickContacts',
+            tabId: currentTabId
+        }, (response) => {
+            if (chrome.runtime.lastError) {
+                console.error("停止批量数据提取错误:", chrome.runtime.lastError.message);
+            } else if (response && response.status === 'stopped') {
+                updateClickUI(false);
+                showMessage('已停止批量数据提取', 'warning');
+            }
+        });
+    });
+
+    // 测试发送功能
+    testSendButton.addEventListener('click', () => {
+        if (!currentTabId) {
+            showMessage('请先选择一个大众点评页面', 'error');
+            return;
+        }
+
+        // 禁用按钮避免重复点击
+        testSendButton.disabled = true;
+        testSendButton.style.opacity = '0.6';
+
+        chrome.runtime.sendMessage({
+            type: 'testSendMessage',
+            tabId: currentTabId
+        }, (response) => {
+            // 恢复按钮状态
+            testSendButton.disabled = false;
+            testSendButton.style.opacity = '1';
+
+            if (chrome.runtime.lastError) {
+                console.error("测试发送错误:", chrome.runtime.lastError.message);
+                showMessage('测试发送失败', 'error');
+            } else if (response && response.status === 'success') {
+                showMessage('测试消息发送成功！', 'success');
+            } else if (response && response.status === 'failed') {
+                showMessage(response.message || '测试发送失败', 'error');
+            }
+        });
+    });
+
+    // 监听来自content script的进度更新
+    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+        if (request.type === 'clickProgress') {
+            const progressText = request.status ? 
+                `${request.current}/${request.total} - ${request.status}` : 
+                `${request.current}/${request.total}`;
+            clickProgressSpan.textContent = progressText;
+            
+            if (request.current >= request.total) {
+                updateClickUI(false);
+                showMessage('联系人数据提取完成', 'success');
+            }
+        } else if (request.type === 'clickError') {
+            updateClickUI(false);
+            showMessage(request.message || '点击过程中发生错误', 'error');
+        }
+    });
 }); 

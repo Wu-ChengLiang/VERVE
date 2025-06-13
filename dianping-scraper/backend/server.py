@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 大众点评网页元素读取器 - WebSocket服务器
-负责接收来自浏览器扩展的数据并进行处理
+精简版 - 负责接收和处理来自浏览器扩展的核心数据
+集成AI客户端，自动回复客户消息
 """
 
 import asyncio
@@ -12,8 +13,13 @@ from datetime import datetime
 from typing import Set, Dict, Any
 import signal
 import sys
+import os
 
-# 配置日志 - 修复Windows编码问题
+# 添加AI客户端路径
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+from aiclient import AIClient
+
+# 配置日志
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -33,31 +39,27 @@ if sys.platform.startswith('win'):
 logger = logging.getLogger(__name__)
 
 class DianpingWebSocketServer:
-    """大众点评WebSocket服务器"""
+    """大众点评WebSocket服务器 - 精简版"""
     
     def __init__(self, host: str = "localhost", port: int = 8765):
         self.host = host
         self.port = port
         self.clients: Set[websockets.WebSocketServerProtocol] = set()
         self.data_store: Dict[str, Any] = {}
+        self.ai_client = AIClient()
+        logger.info(f"[AI] AI客户端初始化成功，可用提供商: {len(self.ai_client.adapters)}")
         
     async def register_client(self, websocket: websockets.WebSocketServerProtocol):
         """注册新客户端连接"""
         self.clients.add(websocket)
         client_info = f"{websocket.remote_address[0]}:{websocket.remote_address[1]}"
-        logger.info(f"[SUCCESS] 客户端连接: {client_info}")
-        logger.info(f"[INFO] 当前连接数: {len(self.clients)}")
+        logger.info(f"[连接] 客户端: {client_info}")
+        logger.info(f"[状态] 当前连接数: {len(self.clients)}")
         
-        # 发送欢迎消息
         welcome_msg = {
             "type": "welcome",
             "message": "连接成功! 大众点评数据提取服务已就绪",
-            "timestamp": datetime.now().isoformat(),
-            "server_info": {
-                "host": self.host,
-                "port": self.port,
-                "version": "1.0.0"
-            }
+            "timestamp": datetime.now().isoformat()
         }
         await websocket.send(json.dumps(welcome_msg, ensure_ascii=False))
 
@@ -65,43 +67,44 @@ class DianpingWebSocketServer:
         """注销客户端连接"""
         self.clients.discard(websocket)
         client_info = f"{websocket.remote_address[0]}:{websocket.remote_address[1]}"
-        logger.info(f"[DISCONNECT] 客户端断开: {client_info}")
-        logger.info(f"[INFO] 当前连接数: {len(self.clients)}")
+        logger.info(f"[断开] 客户端: {client_info}")
+        logger.info(f"[状态] 当前连接数: {len(self.clients)}")
 
     async def handle_message(self, websocket: websockets.WebSocketServerProtocol, message: str):
         """处理来自客户端的消息"""
         try:
             data = json.loads(message)
-            msg_type = data.get("type", "unknown")
             timestamp = datetime.now().isoformat()
             
-            logger.info(f"[MESSAGE] 收到消息类型: {msg_type}")
-            logger.debug(f"[MESSAGE] 消息内容: {json.dumps(data, ensure_ascii=False, indent=2)}")
+            response = None
+            if isinstance(data, list):
+                logger.info(f"[消息] 收到数据数组 (共 {len(data)} 条)")
+                response = await self.handle_data_list(data, timestamp)
+            elif isinstance(data, dict):
+                msg_type = data.get("type", "unknown")
+                logger.info(f"[消息] 类型: {msg_type}")
+                response = await self.process_message_by_type(data, timestamp)
+            else:
+                logger.warning(f"⚠️ 未知数据类型: {type(data)}")
+                response = {
+                    "type": "error",
+                    "message": "不支持的数据类型",
+                    "timestamp": timestamp
+                }
             
-            # 根据消息类型处理
-            response = await self.process_message_by_type(data, timestamp)
-            
-            # 发送响应
             if response:
                 await websocket.send(json.dumps(response, ensure_ascii=False))
-                logger.info(f"[RESPONSE] 发送响应: {response.get('type', 'unknown')}")
                 
         except json.JSONDecodeError as e:
-            logger.error(f"[ERROR] JSON解析错误: {e}")
-            error_response = {
-                "type": "error",
-                "message": "JSON格式错误",
-                "timestamp": datetime.now().isoformat()
-            }
-            await websocket.send(json.dumps(error_response, ensure_ascii=False))
+            logger.error(f"[错误] JSON解析错误: {e}")
+            await websocket.send(json.dumps({
+                "type": "error", "message": "JSON格式错误", "timestamp": datetime.now().isoformat()
+            }, ensure_ascii=False))
         except Exception as e:
-            logger.error(f"[ERROR] 消息处理错误: {e}")
-            error_response = {
-                "type": "error", 
-                "message": "服务器内部错误",
-                "timestamp": datetime.now().isoformat()
-            }
-            await websocket.send(json.dumps(error_response, ensure_ascii=False))
+            logger.error(f"[错误] 消息处理错误: {e}")
+            await websocket.send(json.dumps({
+                "type": "error", "message": "服务器内部错误", "timestamp": datetime.now().isoformat()
+            }, ensure_ascii=False))
 
     async def process_message_by_type(self, data: Dict[str, Any], timestamp: str) -> Dict[str, Any]:
         """根据消息类型处理数据"""
@@ -115,12 +118,7 @@ class DianpingWebSocketServer:
             }
             
         elif msg_type == "dianping_data":
-            # 处理大众点评数据
             return await self.handle_dianping_data(data, timestamp)
-            
-        elif msg_type == "page_info":
-            # 处理页面信息
-            return await self.handle_page_info(data, timestamp)
             
         else:
             logger.warning(f"⚠️ 未知消息类型: {msg_type}")
@@ -130,43 +128,61 @@ class DianpingWebSocketServer:
                 "timestamp": timestamp
             }
 
-    async def handle_dianping_data(self, data: Dict[str, Any], timestamp: str) -> Dict[str, Any]:
-        """处理大众点评数据"""
-        content = data.get("content", {})
-        page_url = data.get("url", "")
+    async def handle_data_list(self, data_list: list, timestamp: str) -> Dict[str, Any]:
+        """处理数据列表"""
+        logger.info(f"[数据] 提取到 {len(data_list)} 条数据:")
+        for item in data_list:
+            content = item.get('content', '无内容')
+            if isinstance(content, dict):
+                content = content.get('name', str(content)[:50])
+            logger.info(f"  - {str(content)[:100]}")
         
-        # 存储数据
-        data_id = f"dianping_{timestamp}"
+        # 检查是否需要AI回复
+        try:
+            ai_response = await self.ai_client.process_scraped_data(data_list)
+            if ai_response:
+                logger.info(f"[AI回复] 生成回复: {ai_response.content[:100]}...")
+                # 发送AI回复到所有连接的客户端
+                await self._broadcast_ai_reply(ai_response)
+        except Exception as e:
+            logger.error(f"[AI错误] AI处理失败: {e}")
+        
+        data_id = f"dianping_list_{timestamp}"
         self.data_store[data_id] = {
-            "content": content,
-            "url": page_url,
+            "content": data_list,
             "timestamp": timestamp,
-            "type": "dianping_data"
+            "type": "dianping_data_list"
         }
-        
-        logger.info(f"[DATA] 存储大众点评数据: {data_id}")
-        logger.info(f"[URL] 页面URL: {page_url}")
-        logger.info(f"[COUNT] 数据条目数: {len(content) if isinstance(content, list) else 1}")
         
         return {
             "type": "data_received",
-            "message": "大众点评数据已接收并存储",
+            "message": f"数据列表已接收 ({len(data_list)}条)",
             "data_id": data_id,
             "timestamp": timestamp
         }
 
-    async def handle_page_info(self, data: Dict[str, Any], timestamp: str) -> Dict[str, Any]:
-        """处理页面信息"""
-        page_info = data.get("page_info", {})
+    async def handle_dianping_data(self, data: Dict[str, Any], timestamp: str) -> Dict[str, Any]:
+        """处理大众点评数据"""
+        content = data.get("payload", {})
         
-        logger.info(f"[PAGE_INFO] 收到页面信息:")
-        logger.info(f"   - 标题: {page_info.get('title', 'N/A')}")
-        logger.info(f"   - URL: {page_info.get('url', 'N/A')}")
-        logger.info(f"   - 元素数量: {page_info.get('element_count', 0)}")
+        data_id = f"dianping_{timestamp}"
+        self.data_store[data_id] = {
+            "content": content,
+            "timestamp": timestamp,
+            "type": "dianping_data_object"
+        }
+        
+        logger.info(f"[数据] 存储数据对象: {data_id}")
+        
+        if content.get("pageType") == "chat_page":
+            data_items = content.get("data", [])
+            if data_items:
+                logger.info(f"[聊天] 提取到 {len(data_items)} 条数据")
         
         return {
-            "type": "page_info_received",
-            "message": "页面信息已接收",
+            "type": "data_received",
+            "message": "大众点评数据已接收",
+            "data_id": data_id,
             "timestamp": timestamp
         }
 
@@ -183,10 +199,9 @@ class DianpingWebSocketServer:
 
     async def start_server(self):
         """启动WebSocket服务器"""
-        logger.info(f"[START] 启动大众点评WebSocket服务器...")
-        logger.info(f"[SERVER] 监听地址: {self.host}:{self.port}")
+        logger.info(f"[启动] 大众点评WebSocket服务器")
+        logger.info(f"[服务器] 监听地址: {self.host}:{self.port}")
         
-        # 启动WebSocket服务器
         start_server = websockets.serve(
             self.handle_client,
             self.host,
@@ -195,27 +210,42 @@ class DianpingWebSocketServer:
             ping_timeout=10
         )
         
-        logger.info(f"[SUCCESS] 服务器启动成功! 等待连接...")
-        logger.info(f"[WEBSOCKET] 浏览器扩展可以连接到: ws://{self.host}:{self.port}")
+        logger.info(f"[成功] 服务器启动成功! 等待连接...")
         
         return start_server
-
-    def get_stats(self) -> Dict[str, Any]:
-        """获取服务器统计信息"""
-        return {
-            "connected_clients": len(self.clients),
-            "stored_data_count": len(self.data_store),
-            "server_host": self.host,
-            "server_port": self.port,
-            "uptime": datetime.now().isoformat()
+    
+    async def _broadcast_ai_reply(self, ai_response):
+        """广播AI回复到所有客户端"""
+        if not self.clients:
+            logger.warning("[广播] 没有连接的客户端，无法发送AI回复")
+            return
+        
+        # 发送AI回复指令，让前端自动发送
+        message = {
+            "type": "sendAIReply",
+            "text": ai_response.content
         }
+        
+        # 发送到所有连接的客户端
+        disconnected = []
+        for client in self.clients:
+            try:
+                await client.send(json.dumps(message, ensure_ascii=False))
+                logger.info(f"[广播] AI回复指令已发送: {ai_response.content[:50]}...")
+            except websockets.exceptions.ConnectionClosed:
+                disconnected.append(client)
+            except Exception as e:
+                logger.error(f"[广播错误] 发送AI回复失败: {e}")
+                disconnected.append(client)
+        
+        # 清理断开的连接
+        for client in disconnected:
+            self.clients.discard(client)
 
 async def main():
     """主函数"""
-    # 创建服务器实例
     server = DianpingWebSocketServer()
     
-    # 处理优雅关闭
     def signal_handler(signum, frame):
         logger.info("🛑 收到停止信号，正在关闭服务器...")
         sys.exit(0)
@@ -224,14 +254,9 @@ async def main():
     signal.signal(signal.SIGTERM, signal_handler)
     
     try:
-        # 启动服务器
         start_server = await server.start_server()
-        
-        # 运行服务器
         await start_server
-        
-        # 保持运行
-        await asyncio.Future()  # 永远运行
+        await asyncio.Future()  # 保持运行
         
     except Exception as e:
         logger.error(f"❌ 服务器启动失败: {e}")
