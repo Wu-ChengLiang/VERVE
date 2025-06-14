@@ -55,7 +55,7 @@ class DatabaseAPIService:
             params["technician_id"] = technician_id
         
         try:
-            result = await self._make_request("/functions/appointments", params)
+            result = await self._make_request("/appointments", params)
             return result.get("available_slots", [])
         except Exception as e:
             self.logger.error(f"查询可用预约失败: {e}")
@@ -72,14 +72,17 @@ class DatabaseAPIService:
         Returns:
             技师列表
         """
-        params = {"action": "search"}
+        params = {}
         if name:
             params["name"] = name
         if skill:
             params["skill"] = skill
         
         try:
-            result = await self._make_request("/functions/therapists", params)
+            result = await self._make_request("/therapists", params)
+            # 如果返回的是数组，直接返回；如果是对象包含therapists字段，则返回therapists
+            if isinstance(result, list):
+                return result
             return result.get("therapists", [])
         except Exception as e:
             self.logger.error(f"搜索技师失败: {e}")
@@ -105,7 +108,7 @@ class DatabaseAPIService:
         }
         
         try:
-            result = await self._make_request("/functions/therapists", params)
+            result = await self._make_request("/therapists", params)
             return result.get("schedules", [])
         except Exception as e:
             self.logger.error(f"查询技师排班失败: {e}")
@@ -139,7 +142,7 @@ class DatabaseAPIService:
             params["additional_info"] = additional_info
         
         try:
-            result = await self._make_request("/functions/appointments", params)
+            result = await self._make_request("/appointments", params)
             return {
                 "success": True,
                 "data": result,
@@ -169,7 +172,7 @@ class DatabaseAPIService:
         }
         
         try:
-            result = await self._make_request("/functions/appointments", params)
+            result = await self._make_request("/appointments", params)
             return result.get("appointment")
         except Exception as e:
             self.logger.error(f"获取预约详情失败: {e}")
@@ -182,10 +185,13 @@ class DatabaseAPIService:
         Returns:
             门店列表
         """
-        params = {"action": "list"}
+        params = {}
         
         try:
-            result = await self._make_request("/functions/stores", params)
+            result = await self._make_request("/stores", params)
+            # 如果返回的是数组，直接返回；如果是对象包含stores字段，则返回stores
+            if isinstance(result, list):
+                return result
             return result.get("stores", [])
         except Exception as e:
             self.logger.error(f"获取门店列表失败: {e}")
