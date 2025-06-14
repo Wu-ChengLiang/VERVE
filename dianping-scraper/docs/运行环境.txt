@@ -1,0 +1,14 @@
+# 创建名为 venv 的虚拟环境
+python -m venv venv
+
+# 激活虚拟环境
+venv\Scripts\activate
+
+
+#激活脚本
+notepad $PROFILE
+
+$env:VIRTUAL_ENV = "F:\feat\verve\venv"
+. "$env:VIRTUAL_ENV\Scripts\Activate.ps1"
+
+

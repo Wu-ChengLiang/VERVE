@@ -1,0 +1,5 @@
+[email]
+sender_email = "19357509506@163.com" # str
+smtp_password = "PSuL9X2RGSFgysaH"   # str
+smtp_server = "smtp.163.com"         # str
+server_port = 25                     # int  25/465/587  -- 明文/SSL/TSL
