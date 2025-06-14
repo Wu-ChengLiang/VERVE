@@ -2,7 +2,7 @@
 AI模型数据结构定义
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from enum import Enum
@@ -37,6 +37,7 @@ class AIRequest:
     max_tokens: Optional[int] = None
     temperature: Optional[float] = None
     stream: bool = False
+    tools: Optional[List[Dict[str, Any]]] = None
     
     def to_openai_format(self) -> Dict[str, Any]:
         """转换为OpenAI API格式"""
@@ -49,6 +50,9 @@ class AIRequest:
             data["temperature"] = self.temperature
         if self.stream:
             data["stream"] = self.stream
+        if self.tools:
+            data["tools"] = self.tools
+            data["tool_choice"] = "auto"
         return data
 
 
@@ -60,6 +64,7 @@ class AIResponse:
     provider: str
     usage: Optional[Dict[str, int]] = None
     finish_reason: Optional[str] = None
+    tool_calls: Optional[List[Dict[str, Any]]] = None
     timestamp: datetime = None
     
     def __post_init__(self):
