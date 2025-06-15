@@ -10,7 +10,7 @@ class Config:
     
     # WebSocket服务器配置
     WEBSOCKET_HOST = os.getenv("WEBSOCKET_HOST", "localhost")
-    WEBSOCKET_PORT = int(os.getenv("WEBSOCKET_PORT", 8765))
+    WEBSOCKET_PORT = int(os.getenv("WEBSOCKET_PORT", 8767))
     
     # 日志配置
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")

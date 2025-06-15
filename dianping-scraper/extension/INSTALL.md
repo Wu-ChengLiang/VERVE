@@ -4,7 +4,7 @@
 
 - Chrome 浏览器 88+ 或 Edge 浏览器 88+
 - 支持Manifest V3的现代浏览器
-- Python WebSocket服务器运行在 localhost:8765
+- Python WebSocket服务器运行在 localhost:8767
 
 ## 🚀 安装步骤
 
@@ -42,9 +42,9 @@ python server.py
 服务器启动后会显示：
 ```
 [START] 启动大众点评WebSocket服务器...
-[SERVER] 监听地址: localhost:8765
+[SERVER] 监听地址: localhost:8767
 [SUCCESS] 服务器启动成功! 等待连接...
-[WEBSOCKET] 浏览器扩展可以连接到: ws://localhost:8765
+[WEBSOCKET] 浏览器扩展可以连接到: ws://localhost:8767
 ```
 
 ### 3. 在Chrome中加载扩展
@@ -130,7 +130,7 @@ document.head.appendChild(script);
 2. **WebSocket连接失败**
    - 确认Python服务器正在运行
    - 检查防火墙设置
-   - 验证端口8765是否被占用
+   - 验证端口8767是否被占用
 
 3. **数据提取不工作**
    - 确认在正确的大众点评页面

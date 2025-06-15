@@ -77,7 +77,7 @@ class ExtensionTester {
             this.assert(typeof wsManager.disconnect === 'function', '包含disconnect方法');
             
             // 测试配置
-            this.assert(wsManager.serverUrl === 'ws://localhost:8765', '服务器URL配置正确');
+            this.assert(wsManager.serverUrl === 'ws://localhost:8767', '服务器URL配置正确');
             this.assert(wsManager.reconnectInterval === 5000, '重连间隔配置正确');
             
             this.pass(testName);

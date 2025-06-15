@@ -42,7 +42,7 @@ dianping-scraper/
 ### 功能验证 ✅
 
 1. **服务器启动**: 
-   - ✅ 成功监听 localhost:8765
+   - ✅ 成功监听 localhost:8767
    - ✅ 支持多客户端连接
    - ✅ 异步处理机制完善
 
@@ -167,7 +167,7 @@ python test_client.py              # 运行自动化测试
    - 需要手动启动WebSocket服务器
 
 3. **安全考虑**:
-   - 本地WebSocket连接 (localhost:8765)
+   - 本地WebSocket连接 (localhost:8767)
    - 数据仅在本地处理和存储
    - 未加密连接 (开发环境)
 

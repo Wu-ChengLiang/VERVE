@@ -114,7 +114,7 @@ cd backend
 python server.py
 ```
 
-服务启动后会在 `ws://localhost:8765` 监听WebSocket连接。
+服务启动后会在 `ws://localhost:8767` 监听WebSocket连接。
 
 ### 4. 安装Chrome扩展
 
@@ -291,7 +291,7 @@ OPENAI_CONFIG = {
 
 ```python
 WEBSOCKET_HOST = "localhost"
-WEBSOCKET_PORT = 8765
+WEBSOCKET_PORT = 8767
 ```
 
 ## 故障排查
@@ -305,7 +305,7 @@ WEBSOCKET_PORT = 8765
 
 2. **WebSocket连接失败**
    - 确保后端服务正常运行
-   - 检查端口8765是否被占用
+   - 检查端口8767是否被占用
    - 确认防火墙设置
 
 3. **AI回复无响应**

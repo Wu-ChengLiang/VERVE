@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 class DianpingWebSocketServer:
     """大众点评WebSocket服务器 - 精简版"""
     
-    def __init__(self, host: str = "localhost", port: int = 8765):
+    def __init__(self, host: str = "localhost", port: int = 8767):
         self.host = host
         self.port = port
         self.clients: Set[websockets.WebSocketServerProtocol] = set()

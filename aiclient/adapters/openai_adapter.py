@@ -140,6 +140,14 @@ class OpenAIAdapter(BaseAdapter):
                     "data": result
                 }
             
+            elif function_name == "get_stores":
+                results = await db_service.get_stores()
+                return {
+                    "success": True,
+                    "data": results,
+                    "message": f"查询到 {len(results)} 个门店"
+                }
+            
             else:
                 return {
                     "success": False,

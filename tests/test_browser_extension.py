@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 async def send_customer_message(message_content: str):
     """模拟浏览器扩展发送客户消息"""
-    uri = "ws://localhost:8765"
+    uri = "ws://localhost:8767"
     
     try:
         async with websockets.connect(uri) as websocket:
@@ -101,7 +101,7 @@ async def test_non_customer_message():
     """测试非客户消息（应该不触发AI回复）"""
     print("\n🧪 测试非客户消息（不应触发AI回复）...")
     
-    uri = "ws://localhost:8765"
+    uri = "ws://localhost:8767"
     try:
         async with websockets.connect(uri) as websocket:
             # 接收欢迎消息

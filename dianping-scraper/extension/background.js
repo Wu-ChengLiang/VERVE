@@ -3,7 +3,7 @@
  * 精简版 - 负责与Python后端的核心连接和数据传输
  */
 let websocket = null;
-const wsUrl = 'ws://localhost:8765';
+const wsUrl = 'ws://localhost:8767';
 let tabExtractionStatus = {}; // { tabId: boolean }
 
 function connectWebSocket() {

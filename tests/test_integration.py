@@ -38,7 +38,7 @@ async def test_websocket_connection():
     print("🌐 测试WebSocket连接...")
     
     try:
-        uri = "ws://localhost:8765"
+        uri = "ws://localhost:8767"
         async with websockets.connect(uri) as websocket:
             print("✅ WebSocket连接成功")
             

@@ -162,6 +162,18 @@ class BaseAdapter(ABC):
                         "required": ["appointment_id"]
                     }
                 }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_stores",
+                    "description": "获取所有门店列表信息，包括门店名称、地址、营业时间等",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {},
+                        "required": []
+                    }
+                }
             }
         ]
     

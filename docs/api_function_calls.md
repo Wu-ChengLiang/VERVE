@@ -11,9 +11,9 @@ AI客户端现在支持通过函数调用（Function Calling）来访问外部AP
 
 ### 可用端点
 
-1. **门店列表**: `/functions/stores`
-2. **技师列表**: `/functions/therapists`  
-3. **预约管理**: `/functions/appointments`
+1. **门店列表**: `/stores`
+2. **技师列表**: `/therapists`  
+3. **预约管理**: `/appointments`
 
 ## 支持的函数
 
