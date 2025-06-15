@@ -10,10 +10,13 @@ import websockets
 import json
 import logging
 from datetime import datetime
-from typing import Set, Dict, Any
+from typing import Set, Dict, Any, List
 import signal
 import sys
 import os
+
+# 导入新的数据库管理器
+from database import db_manager
 
 # 添加AI客户端路径
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -47,13 +50,11 @@ class DianpingWebSocketServer:
         self.clients: Set[websockets.WebSocketServerProtocol] = set()
         self.data_store: Dict[str, Any] = {}
         self.ai_client = AIClient()
-        
-        # 记忆管理相关属性
-        self.memory_store: Dict[str, List[Dict[str, Any]]] = {}  # {chatId: [memory_items]}
-        self.current_chat_contexts: Dict[str, str] = {}  # {client_id: current_chatId}
+        self.server = None
+        self.is_stopping = False
         
         logger.info(f"[AI] AI客户端初始化成功，可用提供商: {len(self.ai_client.adapters)}")
-        logger.info(f"[记忆] 记忆管理系统初始化完成")
+        logger.info(f"[数据库] 数据库管理器已初始化")
     
     def _safe_get_value(self, value: Any, default: str) -> str:
         """安全获取值，只有None时才使用默认值，保留空字符串"""
@@ -96,385 +97,211 @@ class DianpingWebSocketServer:
                 response = await self.process_message_by_type(data, timestamp)
             else:
                 logger.warning(f"⚠️ 未知数据类型: {type(data)}")
-                response = {
-                    "type": "error",
-                    "message": "不支持的数据类型",
-                    "timestamp": timestamp
-                }
+                response = {"type": "error", "message": "不支持的数据类型"}
             
             if response:
+                response["timestamp"] = datetime.now().isoformat()
                 await websocket.send(json.dumps(response, ensure_ascii=False))
                 
         except json.JSONDecodeError as e:
             logger.error(f"[错误] JSON解析错误: {e}")
-            await websocket.send(json.dumps({
-                "type": "error", "message": "JSON格式错误", "timestamp": datetime.now().isoformat()
-            }, ensure_ascii=False))
+            await websocket.send(json.dumps({"type": "error", "message": "JSON格式错误"}, ensure_ascii=False))
         except Exception as e:
-            logger.error(f"[错误] 消息处理错误: {e}")
-            await websocket.send(json.dumps({
-                "type": "error", "message": "服务器内部错误", "timestamp": datetime.now().isoformat()
-            }, ensure_ascii=False))
+            logger.error(f"[错误] 消息处理错误: {e}", exc_info=True)
+            await websocket.send(json.dumps({"type": "error", "message": "服务器内部错误"}, ensure_ascii=False))
 
     async def process_message_by_type(self, data: Dict[str, Any], timestamp: str) -> Dict[str, Any]:
         """根据消息类型处理数据"""
         msg_type = data.get("type")
         
         if msg_type == "ping":
-            return {
-                "type": "pong",
-                "timestamp": timestamp,
-                "message": "服务器正常运行"
-            }
-            
+            return {"type": "pong", "message": "服务器正常运行"}
         elif msg_type == "dianping_data":
             return await self.handle_dianping_data(data, timestamp)
-            
         elif msg_type == "chat_context_switch":
             return await self.handle_chat_context_switch(data, timestamp)
-            
         elif msg_type == "memory_update":
             return await self.handle_memory_update(data, timestamp)
-            
-        elif msg_type == "memory_save":
-            return await self.handle_memory_save(data, timestamp)
-            
         else:
             logger.warning(f"⚠️ 未知消息类型: {msg_type}")
-            return {
-                "type": "error",
-                "message": f"未知的消息类型: {msg_type}",
-                "timestamp": timestamp
-            }
+            return {"type": "error", "message": f"未知的消息类型: {msg_type}"}
 
     async def handle_data_list(self, data_list: list, timestamp: str) -> Dict[str, Any]:
-        """处理数据列表"""
-        logger.info(f"[数据] 提取到 {len(data_list)} 条数据:")
-        for item in data_list:
-            content = item.get('content', '无内容')
-            if isinstance(content, dict):
-                content = content.get('name', str(content)[:50])
-            logger.info(f"  - {str(content)[:100]}")
-        
-        # 注释掉AI处理，避免与memory_update重复处理
-        # 现在AI回复完全由memory_update系统处理
-        # try:
-        #     await self._process_data_with_memory(data_list)
-        # except Exception as e:
-        #     logger.error(f"[AI错误] AI处理失败: {e}")
-        
+        """处理数据列表 (通常是历史消息)，现在主要用于记录"""
+        logger.info(f"[数据] 提取到 {len(data_list)} 条数据 (此路径不再触发AI)")
         data_id = f"dianping_list_{timestamp}"
         self.data_store[data_id] = {
-            "content": data_list,
-            "timestamp": timestamp,
-            "type": "dianping_data_list"
+            "content": data_list, "timestamp": timestamp, "type": "dianping_data_list"
         }
-        
-        return {
-            "type": "data_received",
-            "message": f"数据列表已接收 ({len(data_list)}条)",
-            "data_id": data_id,
-            "timestamp": timestamp
-        }
+        return {"type": "data_received", "message": f"数据列表已接收 ({len(data_list)}条)", "data_id": data_id}
 
     async def handle_dianping_data(self, data: Dict[str, Any], timestamp: str) -> Dict[str, Any]:
-        """处理大众点评数据"""
+        """处理通用的大众点评数据对象"""
         content = data.get("payload", {})
-        
         data_id = f"dianping_{timestamp}"
-        self.data_store[data_id] = {
-            "content": content,
-            "timestamp": timestamp,
-            "type": "dianping_data_object"
-        }
-        
+        self.data_store[data_id] = {"content": content, "timestamp": timestamp, "type": "dianping_data_object"}
         logger.info(f"[数据] 存储数据对象: {data_id}")
-        
-        if content.get("pageType") == "chat_page":
-            data_items = content.get("data", [])
-            if data_items:
-                logger.info(f"[聊天] 提取到 {len(data_items)} 条数据")
-        
-        return {
-            "type": "data_received",
-            "message": "大众点评数据已接收",
-            "data_id": data_id,
-            "timestamp": timestamp
-        }
+        return {"type": "data_received", "message": "大众点评数据已接收", "data_id": data_id}
 
     async def handle_chat_context_switch(self, data: Dict[str, Any], timestamp: str) -> Dict[str, Any]:
-        """处理聊天对象切换"""
+        """处理聊天对象切换 - 简化版，仅记录日志"""
         payload = data.get("payload", {})
-        action = payload.get("action")
-        old_chat_id = payload.get("oldChatId")
         new_chat_id = payload.get("newChatId")
-        old_contact_name = payload.get("oldContactName")
-        new_contact_name = payload.get("newContactName")
-        conversation_memory = payload.get("conversationMemory", [])
-        
-        logger.info(f"[记忆] 聊天对象切换: {old_contact_name} -> {new_contact_name}")
-        
-        # 保存旧的记忆
-        if old_chat_id and conversation_memory:
-            self.memory_store[old_chat_id] = conversation_memory.copy()
-            logger.info(f"[记忆] 保存 {old_contact_name} 的记忆 ({len(conversation_memory)}条)")
-        
-        # 清空当前上下文并加载新的记忆
-        if new_chat_id:
-            existing_memory = self.memory_store.get(new_chat_id, [])
-            logger.info(f"[记忆] 加载 {new_contact_name} 的记忆 ({len(existing_memory)}条)")
-            
-            # 更新AI客户端的记忆上下文
-            if hasattr(self.ai_client, 'set_conversation_memory'):
-                self.ai_client.set_conversation_memory(existing_memory)
-        
-        return {
-            "type": "chat_context_switched",
-            "message": f"聊天对象已切换: {old_contact_name} -> {new_contact_name}",
-            "old_chat_id": old_chat_id,
-            "new_chat_id": new_chat_id,
-            "loaded_memory_count": len(existing_memory) if new_chat_id else 0,
-            "timestamp": timestamp
-        }
+        new_contact_name = payload.get("newContactName", "未知用户")
+        logger.info(f"[上下文切换] 切换到: {new_contact_name} ({new_chat_id})")
+        return {"type": "chat_context_switched", "message": f"聊天对象已切换: {new_contact_name}", "new_chat_id": new_chat_id}
 
     async def handle_memory_update(self, data: Dict[str, Any], timestamp: str) -> Dict[str, Any]:
-        """处理记忆更新"""
+        """
+        使用数据库处理记忆更新，识别新消息并触发AI。
+        这是目前系统的核心AI触发器。
+        """
         payload = data.get("payload", {})
-        action = payload.get("action")
-        
-        # 更严格地处理chatId和contactName，避免空字符串被替换
-        raw_chat_id = payload.get("chatId")
-        raw_contact_name = payload.get("contactName")
-        
-        # 只有在值为None或undefined时才使用默认值，空字符串不替换
-        chat_id = self._safe_get_value(raw_chat_id, "default_chat")
-        contact_name = self._safe_get_value(raw_contact_name, "unknown")
-        
-        # 额外的日志来调试前端传递的原始值
-        # logger.info(f"[Memory Update原始值] chatId: '{raw_chat_id}', contactName: '{raw_contact_name}'")
-        # logger.info(f"[Memory Update处理后] chatId: '{chat_id}', contactName: '{contact_name}'")
-        
-        message = payload.get("message", {})
+        chat_id = self._safe_get_value(payload.get("chatId"), "default_chat")
+        contact_name = self._safe_get_value(payload.get("contactName"), "未知用户")
         conversation_memory = payload.get("conversationMemory", [])
-        
-        # 调试日志
-        # logger.info(f"[Memory Update调试] action: {action}, chatId: {chat_id}, contactName: {contact_name}")
-        # logger.info(f"[Memory Update调试] 消息类型: {message.get('messageType')}, 记忆长度: {len(conversation_memory)}")
-        # if conversation_memory:
-        #     logger.info(f"[Memory Update调试] 记忆内容预览: {conversation_memory[-1] if conversation_memory else 'None'}")
-        
-        if action == "add_message":  # 移除chat_id检查，因为已经有默认值
-            # 更新存储的记忆
-            self.memory_store[chat_id] = conversation_memory.copy()
-            logger.info(f"[记忆存储] 已存储到key: {chat_id}, 记忆条数: {len(conversation_memory)}")
-            
-            # 检查是否需要AI回复
-            if message.get("messageType") == "customer":
-                try:
-                    customer_msg = message.get("originalContent", "")
-                    logger.info(f"[记忆调试] 客户消息: {customer_msg}")
-                    logger.info(f"[记忆调试] 对话历史长度: {len(conversation_memory)}")
-                    
-                    # 打印最近几条对话历史用于调试
-                    if conversation_memory:
-                        logger.info(f"[记忆调试] 最近对话历史:")
-                        for i, mem in enumerate(conversation_memory[-5:], 1):
-                            role = mem.get("role", "unknown")
-                            content = mem.get("content", "")[:50]
-                            logger.info(f"  {i}. {role}: {content}...")
-                    
-                    # 传递完整的对话历史给AI
-                    ai_response = await self.ai_client.generate_customer_service_reply(
-                        customer_msg,
-                        conversation_history=conversation_memory
-                    )
-                    if ai_response:
-                        logger.info(f"[AI回复] 为 {contact_name} 生成回复: {ai_response.content[:50]}...")
-                        await self._broadcast_ai_reply(ai_response)
-                except Exception as e:
-                    logger.error(f"[AI错误] 处理客户消息失败: {e}")
-            
-            logger.info(f"[记忆] 更新 {contact_name} 的记忆 ({len(conversation_memory)}条)")
-        
-        return {
-            "type": "memory_updated",
-            "message": f"记忆已更新: {contact_name}",
-            "chat_id": chat_id,
-            "memory_count": len(conversation_memory),
-            "timestamp": timestamp
-        }
 
-    async def handle_memory_save(self, data: Dict[str, Any], timestamp: str) -> Dict[str, Any]:
-        """处理记忆保存"""
-        payload = data.get("payload", {})
-        
-        # 更严格地处理chatId和contactName，避免空字符串被替换
-        raw_chat_id = payload.get("chatId")
-        raw_contact_name = payload.get("contactName")
-        
-        # 只有在值为None或undefined时才使用默认值，空字符串不替换
-        chat_id = self._safe_get_value(raw_chat_id, "default_chat")
-        contact_name = self._safe_get_value(raw_contact_name, "unknown")
-        
-        conversation_memory = payload.get("conversationMemory", [])
-        
-        if conversation_memory:  # 只要有记忆就保存，不需要检查chat_id
-            self.memory_store[chat_id] = conversation_memory.copy()
-            logger.info(f"[记忆] 自动保存 {contact_name} 的记忆 ({len(conversation_memory)}条)")
+        if not conversation_memory:
+            return { "type": "memory_ack", "message": "空记忆，无需更新" }
+
+        logger.info(f"[记忆处理] 收到 {contact_name} ({chat_id}) 的 {len(conversation_memory)} 条记忆")
+
+        new_messages = []
+        for message in conversation_memory:
+            message['chatId'] = message.get('chatId', chat_id)
+            message['contactName'] = message.get('contactName', contact_name)
             
-            # TODO: 这里可以添加持久化到文件的逻辑
-            # await self._persist_memory_to_file(chat_id, contact_name, conversation_memory)
+            message_id = db_manager._generate_message_id(message)
+            
+            if not db_manager.is_message_processed(message_id):
+                new_messages.append(message)
+
+        if not new_messages:
+            logger.info(f"[记忆处理] {contact_name}: 无新消息")
+            return { "type": "memory_ack", "message": "无新消息" }
+
+        logger.info(f"[记忆处理] {contact_name}: 检测到 {len(new_messages)} 条新消息，将存入数据库")
+        for msg in new_messages:
+            db_manager.add_message(msg)
+            logger.info(f"  -> [新消息] Role: {msg.get('role', 'N/A')}, Content: '{str(msg.get('content', ''))[:50]}...'")
+
+        new_customer_messages = [m for m in new_messages if m.get("role") == "user"]
+
+        if not new_customer_messages:
+            logger.info(f"[AI触发] {contact_name}: 新消息中无客户消息，不触发AI")
+            return { "type": "memory_updated", "new_messages_count": len(new_messages) }
+
+        latest_customer_message = new_customer_messages[-1]
+        message_content = latest_customer_message.get("content", "")
         
-        return {
-            "type": "memory_saved",
-            "message": f"记忆已保存: {contact_name}",
-            "chat_id": chat_id,
-            "memory_count": len(conversation_memory),
-            "timestamp": timestamp
-        }
+        logger.info(f"[AI触发] {contact_name}: 基于新消息 '{message_content[:50]}...' 触发AI")
+
+        full_history = db_manager.get_chat_history(chat_id, limit=50)
+        logger.info(f"[AI触发] 为AI加载了 {len(full_history)} 条来自数据库的历史记录")
+
+        try:
+            ai_response = await self.ai_client.generate_customer_service_reply(
+                customer_message=message_content,
+                conversation_history=full_history
+            )
+
+            if ai_response and ai_response.content:
+                ai_response_text = ai_response.content
+                logger.info(f"[AI回复] {contact_name}: {ai_response_text[:100]}...")
+                ai_reply_message = {
+                    "type": "ai_reply", "chatId": chat_id, "contactName": contact_name,
+                    "reply": ai_response_text, "timestamp": datetime.now().isoformat()
+                }
+                await self._broadcast_ai_reply(ai_reply_message)
+                
+                db_message = {
+                    "chatId": chat_id, "contactName": contact_name, "role": "assistant",
+                    "content": ai_response_text, "timestamp": ai_reply_message["timestamp"]
+                }
+                db_manager.add_message(db_message)
+                logger.info(f"[数据库] 已存储AI对 {contact_name} 的回复")
+            else:
+                logger.warning(f"[AI回复] {contact_name}: AI未返回有效回复")
+
+        except Exception as e:
+            logger.error(f"[AI触发] 调用AI时发生错误 for {contact_name}: {e}", exc_info=True)
+
+        return { "type": "memory_updated_and_ai_triggered", "new_messages_count": len(new_messages) }
 
     async def handle_client(self, websocket):
-        """处理客户端连接 - 移除废弃的 path 参数"""
+        """主循环，处理单个客户端的所有通信"""
         await self.register_client(websocket)
         try:
             async for message in websocket:
                 await self.handle_message(websocket, message)
-        except websockets.exceptions.ConnectionClosed:
-            pass
+        except websockets.exceptions.ConnectionClosed as e:
+            logger.warning(f"[断开] 连接异常关闭: {e}")
         finally:
             await self.unregister_client(websocket)
 
     async def start_server(self):
         """启动WebSocket服务器"""
-        logger.info(f"[启动] 大众点评WebSocket服务器")
-        logger.info(f"[服务器] 监听地址: {self.host}:{self.port}")
-        
-        start_server = websockets.serve(
-            self.handle_client,
-            self.host,
-            self.port,
-            ping_interval=20,
-            ping_timeout=10
-        )
-        
-        logger.info(f"[成功] 服务器启动成功! 等待连接...")
-        
-        return start_server
-    
-    async def _broadcast_ai_reply(self, ai_response):
-        """广播AI回复到所有客户端"""
-        if not self.clients:
-            logger.warning("[广播] 没有连接的客户端，无法发送AI回复")
-            return
-        
-        # 发送AI回复指令，让前端自动发送
-        message = {
+        self.server = await websockets.serve(self.handle_client, self.host, self.port)
+        logger.info(f"🚀 服务器已启动，监听于 ws://{self.host}:{self.port}")
+        await self.server.wait_closed()
+
+    async def _broadcast_ai_reply(self, ai_response: Dict[str, Any]):
+        """向所有客户端广播AI回复"""
+        message_to_send = {
             "type": "sendAIReply",
-            "text": ai_response.content
+            "text": ai_response.get("reply", "")
         }
+        logger.info(f"[广播] AI回复指令已发送: {message_to_send['text'][:50]}...")
         
-        # 发送到所有连接的客户端
-        disconnected = []
+        disconnected_clients = []
         for client in self.clients:
             try:
-                await client.send(json.dumps(message, ensure_ascii=False))
-                logger.info(f"[广播] AI回复指令已发送: {ai_response.content[:50]}...")
+                await client.send(json.dumps(message_to_send, ensure_ascii=False))
             except websockets.exceptions.ConnectionClosed:
-                disconnected.append(client)
-            except Exception as e:
-                logger.error(f"[广播错误] 发送AI回复失败: {e}")
-                disconnected.append(client)
+                disconnected_clients.append(client)
         
-        # 清理断开的连接
-        for client in disconnected:
-            self.clients.discard(client)
-
-    async def _process_data_with_memory(self, data_list: list):
-        """使用记忆系统处理数据并生成AI回复"""
-        if not data_list:
-            return
+        for client in disconnected_clients:
+            await self.unregister_client(client)
             
-        # 查找最后一条客户消息（非商家消息）
-        last_customer_message = None
-        chat_id = None
-        contact_name = None
-        
-        for item in reversed(data_list):
-            content = item.get('content', '')
-            if isinstance(content, str):
-                # 检查是否为客户消息（非商家消息）
-                if content.startswith('[客户]'):
-                    last_customer_message = content[4:].strip()  # 去掉[客户]前缀
-                    chat_id = self._safe_get_value(item.get('chatId'), 'default_chat')
-                    contact_name = self._safe_get_value(item.get('contactName'), 'unknown')
-                    break
-                elif not content.startswith('[商家]') and not content.startswith('[未知]'):
-                    # 如果没有前缀，可能也是客户消息
-                    last_customer_message = content.strip()
-                    chat_id = self._safe_get_value(item.get('chatId'), 'default_chat')
-                    contact_name = self._safe_get_value(item.get('contactName'), 'unknown')
-                    break
-        
-        if not last_customer_message:
-            logger.debug("[记忆处理] 没有找到客户消息")
+    async def stop(self):
+        """优雅地停止服务器"""
+        if self.is_stopping:
             return
-            
-        logger.info(f"[记忆处理] 检测到客户消息: {last_customer_message}")
-        logger.info(f"[记忆处理] ChatID: {chat_id}, 联系人: {contact_name}")
-        
-        # 获取对应的记忆
-        conversation_memory = self.memory_store.get(chat_id, [])
-        
-        logger.info(f"[记忆处理] 客户消息: {last_customer_message}")
-        logger.info(f"[记忆处理] 对话历史长度: {len(conversation_memory)}")
-        logger.info(f"[记忆处理] 当前memory_store keys: {list(self.memory_store.keys())}")
-        logger.info(f"[记忆处理] 查找的chatId: {chat_id}")
-        
-        # 打印最近几条对话历史用于调试
-        if conversation_memory:
-            logger.info(f"[记忆处理] 最近对话历史:")
-            for i, mem in enumerate(conversation_memory[-5:], 1):
-                role = mem.get("role", "unknown")
-                content = mem.get("content", "")[:50]
-                logger.info(f"  {i}. {role}: {content}...")
-        
-        # 使用对话历史生成AI回复
-        try:
-            ai_response = await self.ai_client.generate_customer_service_reply(
-                last_customer_message,
-                conversation_history=conversation_memory
-            )
-            if ai_response:
-                logger.info(f"[AI回复] 为 {contact_name} 生成回复: {ai_response.content[:50]}...")
-                await self._broadcast_ai_reply(ai_response)
-        except Exception as e:
-            logger.error(f"[AI错误] 使用记忆生成回复失败: {e}")
+        self.is_stopping = True
+        logger.info("服务器正在停止...")
+        if self.server:
+            self.server.close()
+            await self.server.wait_closed()
+        db_manager.close()
+        logger.info("服务器已成功关闭")
 
 async def main():
-    """主函数"""
     server = DianpingWebSocketServer()
     
-    def signal_handler(signum, frame):
-        logger.info("🛑 收到停止信号，正在关闭服务器...")
-        sys.exit(0)
+    loop = asyncio.get_running_loop()
     
+    def signal_handler(signum, frame):
+        logger.info(f"收到信号 {signum}, 正在优雅地关闭...")
+        asyncio.create_task(server.stop())
+
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
-    
+
     try:
-        start_server = await server.start_server()
-        await start_server
-        await asyncio.Future()  # 保持运行
-        
+        await server.start_server()
     except Exception as e:
-        logger.error(f"❌ 服务器启动失败: {e}")
-        sys.exit(1)
+        logger.critical(f"服务器主程序出现致命错误: {e}", exc_info=True)
+    finally:
+        if not server.is_stopping:
+             await server.stop()
+        logger.info("服务器主程序退出")
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("👋 服务器已停止")
+        logger.info("程序被用户中断")
+
     except Exception as e:
         logger.error(f"❌ 程序异常退出: {e}")
         sys.exit(1) 
