@@ -238,9 +238,9 @@ class AIClient:
         }
         self._conversation_memory.append(memory_item)
         
-        # 限制记忆长度，保留最近的20条
-        if len(self._conversation_memory) > 20:
-            self._conversation_memory = self._conversation_memory[-20:]
+        # 限制记忆长度，保留最近的30条
+        if len(self._conversation_memory) > 30:
+            self._conversation_memory = self._conversation_memory[-30:]
         
         logger.debug(f"添加到记忆: {role} - {content[:50]}...")
     
