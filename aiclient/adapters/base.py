@@ -226,6 +226,52 @@ class BaseAdapter(ABC):
             }
         ]
     
+    def get_email_notification_tools(self) -> List[Dict[str, Any]]:
+        """获取邮件通知工具配置"""
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": "send_appointment_emails",
+                    "description": "发送预约相关的邮件通知，包括给客户发送确认邮件和给技师发送新预约通知邮件",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "customer_name": {
+                                "type": "string",
+                                "description": "客户姓名"
+                            },
+                            "customer_phone": {
+                                "type": "string",
+                                "description": "客户电话号码，用于生成163邮箱地址"
+                            },
+                            "therapist_id": {
+                                "type": "integer",
+                                "description": "技师ID，用于查询技师信息和发送通知邮件"
+                            },
+                            "appointment_date": {
+                                "type": "string",
+                                "description": "预约日期，格式: YYYY-MM-DD"
+                            },
+                            "appointment_time": {
+                                "type": "string",
+                                "description": "预约时间，格式: HH:MM"
+                            },
+                            "service_type": {
+                                "type": "string",
+                                "description": "服务类型（可选）"
+                            },
+                            "notes": {
+                                "type": "string",
+                                "description": "预约备注信息（可选）"
+                            }
+                        },
+                        "required": ["customer_name", "customer_phone", "therapist_id", "appointment_date", "appointment_time"]
+                    }
+                }
+            }
+        ]
+    
     async def _make_request(self, url: str, headers: dict, data: dict) -> dict:
         """发送HTTP请求"""
         import aiohttp
@@ -335,12 +381,14 @@ class BaseAdapter(ABC):
 - cancel_appointment: 取消预约
 - get_appointment_details: 查询预约详情
 - get_stores: 获取门店信息
+- send_appointment_emails: 发送预约邮件通知（客户确认+技师通知）
 
 工作原则：
 1. 当客户询问预约时间、技师信息、排班等问题时，主动调用相应的数据库查询功能获取最新信息
 2. 基于查询结果为客户提供准确、具体的回答
 3. 如果需要创建预约，确保收集到客户姓名、电话、期望时间等必要信息
-4. 仔细阅读对话历史，了解客户之前的问题和需求，基于历史对话的上下文，给出连贯的回复
+4. 当客户成功预约后，主动调用send_appointment_emails发送邮件通知（给客户发确认邮件，给技师发新预约通知）
+5. 仔细阅读对话历史，了解客户之前的问题和需求，基于历史对话的上下文，给出连贯的回复
 注意：请不要出现 联系方式 这个词，一律用电话代替，只要涉及电话和联系方式，请只简短地说:方便给一个姓名和电话吗,预约会用短信的形式通知您
 7.已知信息
 【基础信息】
@@ -385,7 +433,7 @@ class BaseAdapter(ABC):
         # 如果适配器支持function calling，添加工具
         tools = None
         if self.supports_function_calling:
-            tools = self.get_database_tools()
+            tools = self.get_database_tools() + self.get_email_notification_tools()
         
         return AIRequest(
             messages=messages,

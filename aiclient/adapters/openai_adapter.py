@@ -173,6 +173,24 @@ class OpenAIAdapter(BaseAdapter):
                     "message": f"查询到 {len(results)} 个门店"
                 }
             
+            elif function_name == "send_appointment_emails":
+                # 导入邮件通知服务
+                from ..services.email_notification import EmailNotificationService
+                from ..services.email_sender_adapter import EmailSenderAdapter
+                
+                # 创建邮件发送器适配器实例
+                email_sender = EmailSenderAdapter()
+                
+                # 创建邮件通知服务实例
+                email_service = EmailNotificationService(
+                    email_sender=email_sender,
+                    database_service=db_service
+                )
+                
+                # 发送预约邮件通知
+                result = await email_service.send_appointment_notification_emails(function_args)
+                return result
+            
             else:
                 return {
                     "success": False,
