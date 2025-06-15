@@ -424,9 +424,8 @@
                 
                 const prefixedContent = prefix + content;
                 
-                // ✅ 改进去重机制：使用DOM元素的完整路径和内容组合
-                const elementPath = this.getElementPath(node);
-                const uniqueKey = `${elementPath}_${content.slice(0, 100)}_${messageType}`;
+                // 简化的去重机制：仅基于内容和类型
+                const uniqueKey = `${content}_${messageType}`;
 
                 if (content && !this.extractedData.has(uniqueKey)) {
                     const messageData = {
@@ -435,7 +434,7 @@
                         messageType: messageType,
                         content: prefixedContent,
                         originalContent: content,
-                        timestamp: Date.now(), // ✅ 使用当前时间戳，确保时间准确性
+                        timestamp: Date.now(),
                         chatId: this.currentChatId,
                         contactName: this.currentContactName
                     };
@@ -443,7 +442,7 @@
                     messages.push(messageData);
                     this.extractedData.add(uniqueKey);
                     
-                    // ✅ 只对客户消息添加到记忆并可能触发AI回复
+                    // 只对客户消息添加到记忆并可能触发AI回复
                     if (messageType === 'customer') {
                         this.addToMemory(messageData);
                     } else {
@@ -460,36 +459,7 @@
             return { messages, count: messages.length };
         }
 
-        // ✅ 获取元素的完整DOM路径，用于更准确的去重
-        getElementPath(element) {
-            const path = [];
-            let current = element;
-            
-            while (current && current !== document.body) {
-                let selector = current.tagName.toLowerCase();
-                
-                if (current.id) {
-                    selector += `#${current.id}`;
-                } else if (current.className) {
-                    selector += `.${current.className.split(' ').join('.')}`;
-                }
-                
-                // 添加同级元素的索引
-                const siblings = Array.from(current.parentNode?.children || [])
-                    .filter(sibling => sibling.tagName === current.tagName);
-                if (siblings.length > 1) {
-                    const index = siblings.indexOf(current);
-                    selector += `:nth-child(${index + 1})`;
-                }
-                
-                path.unshift(selector);
-                current = current.parentNode;
-            }
-            
-            return path.join(' > ');
-        }
-
-        // ✅ 添加消息到记忆但不触发AI回复的方法
+        // 添加消息到记忆但不触发AI回复的方法
         addToMemoryWithoutTrigger(messageData) {
             if (!this.isMemoryEnabled || !messageData) return;
             
