@@ -284,29 +284,61 @@
         
         autoDetectCurrentContact() {
             try {
-                // 尝试从页面标题或其他元素获取当前联系人信息
+                // 初始化默认值
                 let contactName = '默认联系人';
                 let chatId = 'default_chat';
                 
-                // 尝试从URL或页面元素中获取联系人信息
-                const titleElement = document.querySelector('title');
-                if (titleElement && titleElement.textContent) {
-                    const title = titleElement.textContent.trim();
-                    // 如果标题包含联系人信息，提取它
-                    const match = title.match(/与(.+?)的对话|(.+?)的聊天/);
-                    if (match) {
-                        contactName = match[1] || match[2];
-                        chatId = `chat_${contactName}`;
-                    }
-                }
+                console.log('[联系人检测] 开始自动检测当前联系人...');
                 
-                // 尝试从聊天页面的头部获取联系人信息
-                const chatHeaderElement = document.querySelector('.chat-header .userinfo-username, .chat-title, .contact-name');
-                if (chatHeaderElement) {
-                    const headerName = chatHeaderElement.textContent.trim();
-                    if (headerName) {
-                        contactName = headerName;
-                        chatId = `chat_${contactName}`;
+                // 方法1: 优先从 userinfo-username 元素获取（包含 data-chatid）
+                const userinfoElement = document.querySelector('.userinfo-username[data-chatid]');
+                if (userinfoElement) {
+                    const name = userinfoElement.textContent.trim();
+                    const dataChatId = userinfoElement.getAttribute('data-chatid');
+                    if (name && dataChatId) {
+                        contactName = name;
+                        chatId = dataChatId;
+                        console.log(`[联系人检测] 从 userinfo-username 提取到: ${contactName} (chatId: ${chatId})`);
+                    }
+                } else {
+                    // 方法2: 从 userinfo-name-show 元素获取联系人名称
+                    const nameShowElement = document.querySelector('.userinfo-name-show');
+                    if (nameShowElement) {
+                        const name = nameShowElement.textContent.trim();
+                        if (name) {
+                            contactName = name;
+                            // 如果没有 data-chatid，生成一个基于名称的 chatId
+                            chatId = `chat_${name}_${Date.now()}`;
+                            console.log(`[联系人检测] 从 userinfo-name-show 提取到: ${contactName} (生成 chatId: ${chatId})`);
+                        }
+                    } else {
+                        // 方法3: 尝试其他可能的选择器
+                        const fallbackSelectors = [
+                            '.userinfo-username',
+                            '.chat-title', 
+                            '.contact-name',
+                            '.shop-name',
+                            '.merchant-name'
+                        ];
+                        
+                        for (const selector of fallbackSelectors) {
+                            const element = document.querySelector(selector);
+                            if (element && element.textContent.trim()) {
+                                const name = element.textContent.trim();
+                                contactName = name;
+                                chatId = `chat_${name}_${Date.now()}`;
+                                console.log(`[联系人检测] 从备用选择器 ${selector} 提取到: ${contactName}`);
+                                break;
+                            }
+                        }
+                        
+                        // 方法4: 如果都没找到，使用时间戳生成唯一标识
+                        if (contactName === '默认联系人') {
+                            const timestamp = Date.now();
+                            contactName = `用户_${timestamp}`;
+                            chatId = `chat_${timestamp}`;
+                            console.log(`[联系人检测] 未找到联系人信息，生成临时标识: ${contactName}`);
+                        }
                     }
                 }
                 
@@ -314,13 +346,31 @@
                 this.currentChatId = chatId;
                 this.currentContactName = contactName;
                 
-                console.log(`[记忆] 自动检测到当前联系人: ${contactName} (ID: ${chatId})`);
+                console.log(`[联系人检测] 最终确定联系人: ${contactName} (ID: ${chatId})`);
+                
+                // 调试：输出页面中找到的相关元素
+                console.log('[联系人检测] 页面中的联系人相关元素:');
+                const debugElements = [
+                    { selector: '.userinfo-username[data-chatid]', desc: '带chatId的用户名' },
+                    { selector: '.userinfo-name-show', desc: '用户名显示' },
+                    { selector: '.userinfo-username', desc: '用户名' }
+                ];
+                
+                debugElements.forEach(({ selector, desc }) => {
+                    const el = document.querySelector(selector);
+                    if (el) {
+                        const chatIdAttr = el.getAttribute('data-chatid');
+                        console.log(`  ${desc}: "${el.textContent.trim()}"${chatIdAttr ? ` (chatId: ${chatIdAttr})` : ''}`);
+                    }
+                });
                 
             } catch (error) {
-                console.error('[记忆] 自动检测联系人错误:', error);
-                // 设置默认值
-                this.currentChatId = 'default_chat';
-                this.currentContactName = '默认联系人';
+                console.error('[联系人检测] 自动检测联系人错误:', error);
+                // 错误恢复：使用时间戳生成唯一标识
+                const timestamp = Date.now();
+                this.currentChatId = `error_${timestamp}`;
+                this.currentContactName = `错误恢复_${timestamp}`;
+                console.log(`[联系人检测] 错误恢复，使用: ${this.currentContactName}`);
             }
         }
         
@@ -373,7 +423,10 @@
                 }
                 
                 const prefixedContent = prefix + content;
-                const uniqueKey = `${node.tagName}_${prefixedContent.slice(0, 50)}`;
+                
+                // ✅ 改进去重机制：使用DOM元素的完整路径和内容组合
+                const elementPath = this.getElementPath(node);
+                const uniqueKey = `${elementPath}_${content.slice(0, 100)}_${messageType}`;
 
                 if (content && !this.extractedData.has(uniqueKey)) {
                     const messageData = {
@@ -382,7 +435,7 @@
                         messageType: messageType,
                         content: prefixedContent,
                         originalContent: content,
-                        timestamp: Date.now(),
+                        timestamp: Date.now(), // ✅ 使用当前时间戳，确保时间准确性
                         chatId: this.currentChatId,
                         contactName: this.currentContactName
                     };
@@ -390,8 +443,13 @@
                     messages.push(messageData);
                     this.extractedData.add(uniqueKey);
                     
-                    // 添加到记忆中
-                    this.addToMemory(messageData);
+                    // ✅ 只对客户消息添加到记忆并可能触发AI回复
+                    if (messageType === 'customer') {
+                        this.addToMemory(messageData);
+                    } else {
+                        // 商家消息只添加到记忆，不触发AI回复逻辑
+                        this.addToMemoryWithoutTrigger(messageData);
+                    }
                 }
             });
             
@@ -400,6 +458,57 @@
             }
 
             return { messages, count: messages.length };
+        }
+
+        // ✅ 获取元素的完整DOM路径，用于更准确的去重
+        getElementPath(element) {
+            const path = [];
+            let current = element;
+            
+            while (current && current !== document.body) {
+                let selector = current.tagName.toLowerCase();
+                
+                if (current.id) {
+                    selector += `#${current.id}`;
+                } else if (current.className) {
+                    selector += `.${current.className.split(' ').join('.')}`;
+                }
+                
+                // 添加同级元素的索引
+                const siblings = Array.from(current.parentNode?.children || [])
+                    .filter(sibling => sibling.tagName === current.tagName);
+                if (siblings.length > 1) {
+                    const index = siblings.indexOf(current);
+                    selector += `:nth-child(${index + 1})`;
+                }
+                
+                path.unshift(selector);
+                current = current.parentNode;
+            }
+            
+            return path.join(' > ');
+        }
+
+        // ✅ 添加消息到记忆但不触发AI回复的方法
+        addToMemoryWithoutTrigger(messageData) {
+            if (!this.isMemoryEnabled || !messageData) return;
+            
+            // 添加到本地记忆
+            this.conversationMemory.push({
+                role: messageData.messageType === 'customer' ? 'user' : 'assistant',
+                content: messageData.originalContent,
+                timestamp: messageData.timestamp,
+                messageId: messageData.id
+            });
+            
+            // 限制记忆长度，保留最近的20条消息
+            if (this.conversationMemory.length > 20) {
+                this.conversationMemory = this.conversationMemory.slice(-20);
+            }
+            
+            console.log(`[记忆-无触发] 添加消息到记忆 (${this.conversationMemory.length}/20): ${messageData.originalContent.slice(0, 50)}...`);
+            
+            // 不发送memory_update，避免触发AI回复
         }
 
         extractTuanInfo() {
@@ -523,18 +632,44 @@
         
         getContactInfo(contactElement) {
             let name = '未知联系人';
+            let chatId = '';
+            
             try {
-                const nameElement = contactElement.querySelector('.userinfo-username');
-                if (nameElement) {
-                    name = nameElement.textContent.trim();
+                // 优先从带有 data-chatid 属性的 userinfo-username 元素获取
+                const nameElementWithChatId = contactElement.querySelector('.userinfo-username[data-chatid]');
+                if (nameElementWithChatId) {
+                    name = nameElementWithChatId.textContent.trim();
+                    chatId = nameElementWithChatId.getAttribute('data-chatid');
+                    console.log(`[联系人信息] 从 userinfo-username 提取: ${name} (chatId: ${chatId})`);
+                } else {
+                    // 备用方案：从 userinfo-name-show 或其他元素获取
+                    const selectors = ['.userinfo-name-show', '.userinfo-username', '.contact-name'];
+                    for (const selector of selectors) {
+                        const nameElement = contactElement.querySelector(selector);
+                        if (nameElement && nameElement.textContent.trim()) {
+                            name = nameElement.textContent.trim();
+                            console.log(`[联系人信息] 从 ${selector} 提取: ${name}`);
+                            break;
+                        }
+                    }
+                    
+                    // 尝试从元素本身获取 data-chatid
+                    chatId = contactElement.getAttribute('data-chatid') || contactElement.id || '';
                 }
+                
+                // 如果没有找到 chatId，生成一个基于名称的 ID
+                if (!chatId && name !== '未知联系人') {
+                    chatId = `chat_${name}_${Date.now()}`;
+                    console.log(`[联系人信息] 生成 chatId: ${chatId}`);
+                }
+                
             } catch (error) {
-                console.error('[DianpingExtractor] 获取联系人信息错误:', error);
+                console.error('[联系人信息] 获取联系人信息错误:', error);
             }
             
             return {
                 name: name,
-                chatId: contactElement.getAttribute('data-chatid') || contactElement.id || '',
+                chatId: chatId,
                 timestamp: Date.now()
             };
         }

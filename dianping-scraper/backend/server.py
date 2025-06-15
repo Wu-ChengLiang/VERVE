@@ -54,6 +54,10 @@ class DianpingWebSocketServer:
         
         logger.info(f"[AI] AI客户端初始化成功，可用提供商: {len(self.ai_client.adapters)}")
         logger.info(f"[记忆] 记忆管理系统初始化完成")
+    
+    def _safe_get_value(self, value: Any, default: str) -> str:
+        """安全获取值，只有None时才使用默认值，保留空字符串"""
+        return value if value is not None else default
         
     async def register_client(self, websocket):
         """注册新客户端连接"""
@@ -237,16 +241,27 @@ class DianpingWebSocketServer:
         """处理记忆更新"""
         payload = data.get("payload", {})
         action = payload.get("action")
-        chat_id = payload.get("chatId") or "default_chat"  # 使用默认ID如果为None
-        contact_name = payload.get("contactName") or "unknown"
+        
+        # 更严格地处理chatId和contactName，避免空字符串被替换
+        raw_chat_id = payload.get("chatId")
+        raw_contact_name = payload.get("contactName")
+        
+        # 只有在值为None或undefined时才使用默认值，空字符串不替换
+        chat_id = self._safe_get_value(raw_chat_id, "default_chat")
+        contact_name = self._safe_get_value(raw_contact_name, "unknown")
+        
+        # 额外的日志来调试前端传递的原始值
+        # logger.info(f"[Memory Update原始值] chatId: '{raw_chat_id}', contactName: '{raw_contact_name}'")
+        # logger.info(f"[Memory Update处理后] chatId: '{chat_id}', contactName: '{contact_name}'")
+        
         message = payload.get("message", {})
         conversation_memory = payload.get("conversationMemory", [])
         
         # 调试日志
-        logger.info(f"[Memory Update调试] action: {action}, chatId: {chat_id}, contactName: {contact_name}")
-        logger.info(f"[Memory Update调试] 消息类型: {message.get('messageType')}, 记忆长度: {len(conversation_memory)}")
-        if conversation_memory:
-            logger.info(f"[Memory Update调试] 记忆内容预览: {conversation_memory[-1] if conversation_memory else 'None'}")
+        # logger.info(f"[Memory Update调试] action: {action}, chatId: {chat_id}, contactName: {contact_name}")
+        # logger.info(f"[Memory Update调试] 消息类型: {message.get('messageType')}, 记忆长度: {len(conversation_memory)}")
+        # if conversation_memory:
+        #     logger.info(f"[Memory Update调试] 记忆内容预览: {conversation_memory[-1] if conversation_memory else 'None'}")
         
         if action == "add_message":  # 移除chat_id检查，因为已经有默认值
             # 更新存储的记忆
@@ -292,8 +307,15 @@ class DianpingWebSocketServer:
     async def handle_memory_save(self, data: Dict[str, Any], timestamp: str) -> Dict[str, Any]:
         """处理记忆保存"""
         payload = data.get("payload", {})
-        chat_id = payload.get("chatId") or "default_chat"  # 使用默认ID如果为None
-        contact_name = payload.get("contactName") or "unknown"
+        
+        # 更严格地处理chatId和contactName，避免空字符串被替换
+        raw_chat_id = payload.get("chatId")
+        raw_contact_name = payload.get("contactName")
+        
+        # 只有在值为None或undefined时才使用默认值，空字符串不替换
+        chat_id = self._safe_get_value(raw_chat_id, "default_chat")
+        contact_name = self._safe_get_value(raw_contact_name, "unknown")
+        
         conversation_memory = payload.get("conversationMemory", [])
         
         if conversation_memory:  # 只要有记忆就保存，不需要检查chat_id
@@ -383,14 +405,14 @@ class DianpingWebSocketServer:
                 # 检查是否为客户消息（非商家消息）
                 if content.startswith('[客户]'):
                     last_customer_message = content[4:].strip()  # 去掉[客户]前缀
-                    chat_id = item.get('chatId') or 'default_chat'  # 使用默认ID如果没有chatId
-                    contact_name = item.get('contactName') or 'unknown'
+                    chat_id = self._safe_get_value(item.get('chatId'), 'default_chat')
+                    contact_name = self._safe_get_value(item.get('contactName'), 'unknown')
                     break
                 elif not content.startswith('[商家]') and not content.startswith('[未知]'):
                     # 如果没有前缀，可能也是客户消息
                     last_customer_message = content.strip()
-                    chat_id = item.get('chatId') or 'default_chat'
-                    contact_name = item.get('contactName') or 'unknown'
+                    chat_id = self._safe_get_value(item.get('chatId'), 'default_chat')
+                    contact_name = self._safe_get_value(item.get('contactName'), 'unknown')
                     break
         
         if not last_customer_message:
