@@ -76,7 +76,7 @@ class OpenAIAdapter(BaseAdapter):
         执行function call
         
         Args:
-            function_name: 函数名
+            function_name: 函数名 
             function_args: 函数参数
             
         Returns:
@@ -88,20 +88,57 @@ class OpenAIAdapter(BaseAdapter):
         db_service = DatabaseAPIService()
         
         try:
-            if function_name == "query_available_appointments":
-                target_date = function_args.get("target_date")
-                technician_id = function_args.get("technician_id")
-                results = await db_service.query_available_appointments(target_date, technician_id)
+            # 新API函数调用
+            if function_name == "create_appointment":
+                username = function_args.get("username")
+                customer_name = function_args.get("customer_name")
+                customer_phone = function_args.get("customer_phone")
+                therapist_id = function_args.get("therapist_id")
+                appointment_date = function_args.get("appointment_date")
+                appointment_time = function_args.get("appointment_time")
+                service_type = function_args.get("service_type")
+                notes = function_args.get("notes")
+                
+                result = await db_service.create_appointment(
+                    username, customer_name, customer_phone, therapist_id,
+                    appointment_date, appointment_time, service_type, notes
+                )
+                return result
+            
+            elif function_name == "get_user_appointments":
+                username = function_args.get("username")
+                results = await db_service.get_user_appointments(username)
+                return {
+                    "success": True,
+                    "data": results,
+                    "message": f"查询到 {len(results)} 个预约记录"
+                }
+            
+            elif function_name == "cancel_appointment":
+                appointment_id = function_args.get("appointment_id")
+                username = function_args.get("username")
+                result = await db_service.cancel_appointment(appointment_id, username)
+                return result
+            
+            elif function_name == "query_therapist_availability":
+                therapist_id = function_args.get("therapist_id")
+                date = function_args.get("date")
+                results = await db_service.query_therapist_availability(therapist_id, date)
                 return {
                     "success": True,
                     "data": results,
                     "message": f"查询到 {len(results)} 个可用时间段"
                 }
             
-            elif function_name == "search_technicians":
-                name = function_args.get("name")
-                skill = function_args.get("skill")
-                results = await db_service.search_technicians(name=name, skill=skill)
+            elif function_name == "search_therapists":
+                therapist_name = function_args.get("therapist_name")
+                store_name = function_args.get("store_name")
+                service_type = function_args.get("service_type")
+                results = await db_service.search_therapists(
+                    therapist_name=therapist_name, 
+                    store_name=store_name, 
+                    service_type=service_type
+                )
                 return {
                     "success": True,
                     "data": results,
@@ -119,25 +156,13 @@ class OpenAIAdapter(BaseAdapter):
                     "message": f"查询到 {len(results)} 个排班记录"
                 }
             
-            elif function_name == "create_appointment":
-                customer_name = function_args.get("customer_name")
-                customer_contact = function_args.get("customer_contact")
-                technician_id = function_args.get("technician_id")
-                scheduled_time = function_args.get("scheduled_time")
-                additional_info = function_args.get("additional_info")
-                
-                result = await db_service.create_appointment(
-                    customer_name, customer_contact, technician_id, 
-                    scheduled_time, additional_info
-                )
-                return result
-            
             elif function_name == "get_appointment_details":
                 appointment_id = function_args.get("appointment_id")
                 result = await db_service.get_appointment_details(appointment_id)
                 return {
                     "success": True,
-                    "data": result
+                    "data": result,
+                    "message": "预约详情查询成功"
                 }
             
             elif function_name == "get_stores":
